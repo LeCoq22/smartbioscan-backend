@@ -1,0 +1,6 @@
+*.pdf
+*.html
+20260*.csv
+reporte_*.pdf
+__pycache__/
+.env
