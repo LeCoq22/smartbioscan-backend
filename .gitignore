@@ -1,0 +1,10 @@
+.env
+__pycache__/
+*.pyc
+*.pdf
+*.html
+20260*.csv
+reporte_*.pdf
+reporte_*.html
+.playwright/
+.claude/
