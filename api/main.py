@@ -21,6 +21,8 @@ load_dotenv()
 # El pipeline vive un nivel arriba de api/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+from api.payments import router as payments_router
+
 
 # ─────────────────────────────────────────────
 # APP
@@ -37,6 +39,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.include_router(payments_router)
 
 app.add_middleware(
     CORSMiddleware,
