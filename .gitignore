@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 *.pdf
 *.html
+!smartbioscan-reporte-playground.html
 20260*.csv
 reporte_*.pdf
 reporte_*.html

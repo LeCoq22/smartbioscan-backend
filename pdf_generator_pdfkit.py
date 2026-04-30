@@ -371,7 +371,7 @@ def generate_html(result, doctor_name=""):
   <div class="param-card"><div class="param-label">Grasa visceral</div><div class="param-val">{int(m.visceral_fat)} {visc_b}</div><div class="param-sub">Rango saludable: 1–12</div></div>
   <div class="param-card"><div class="param-label">Edad metabólica</div><div class="param-val">{m.metabolic_age} años {meta_b}</div><div class="param-sub">{k['metabolic_age']['label']}</div></div>
   <div class="param-card"><div class="param-label">% grasa global</div><div class="param-val">{m.body_fat_pct}% {badge(k['fat_cat'],fat_s)}</div><div class="param-sub">Normal {dec}–{dec+9}: {fn[0]}–{fn[1]}%</div></div>
-  <div class="param-card"><div class="param-label">ACT</div><div class="param-val">{act['act_kg']} <span style="font-size:10px;font-weight:400;color:#5c5b55">L</span></div><div class="param-sub">{act['act_pct']}% {act_b}</div></div>
+  <div class="param-card"><div class="param-label">ACT</div><div class="param-val">{act['act_pct']}<span style="font-size:10px;font-weight:400;color:#5c5b55">%</span></div><div class="param-sub">{act['act_kg']} L · {act_b}</div></div>
   <div class="param-card"><div class="param-label">MME estimada {badge('±6%','est')}</div><div class="param-val">{muscle['mme_kg']} <span style="font-size:10px;font-weight:400;color:#5c5b55">kg</span></div><div class="param-sub">IMME {muscle['imme']} — {imme_b}</div></div>
   <div class="param-card"><div class="param-label">Balance muscular</div><div class="param-val">Brazos Δ{bal['arm_diff_pct']}% {bal_b}</div><div class="param-sub">Piernas Δ{bal['leg_diff_pct']}% — {bal['leg_label']}</div></div>
   <div class="param-card"><div class="param-label">Punt. piernas</div><div class="param-val">{int(muscle['leg_score'])} {leg_b}</div><div class="param-sub">Normal {'mujer' if p.sex=='F' else 'hombre'} {dec}–{dec+9}: {muscle['leg_score_normal'][0]}–{muscle['leg_score_normal'][1]}</div></div>
@@ -498,19 +498,16 @@ def generate_html(result, doctor_name=""):
   <span style="font-weight:500">{m.weight_kg} kg {badge('Normal','ok')}</span>
 </div>
 
-<div class="sec">Grasa Segmental — Nivel relativo y % real</div>
-<div class="seg-header"><div>Segmento</div><div style="padding-left:3px">60%–80%–100%–120%–140%</div><div>Niv.</div><div>Cat.</div><div>% real · ref.</div></div>
+<div class="sec">Grasa Segmental — % real</div>
+<div style="display:grid;grid-template-columns:75px 48px 70px 1fr;gap:3px;font-size:8px;color:#9c9a92;margin-bottom:3px;padding-bottom:2px;border-bottom:0.5px solid rgba(0,0,0,0.12)"><div>Segmento</div><div>% real</div><div>Clasificación</div><div>Referencia / Ideal</div></div>
 {seg_fat}
 
 <!-- ═══ PÁGINA 3 ═══ -->
 <div class="page-break"></div>
 
 <div class="sec">Masa Muscular Segmental — Cantidad y Calidad</div>
-<div class="bar-legend">
-  <div class="bl-i"><div class="bl-b" style="background:#2980b9"></div>Cantidad (% del ideal)</div>
-  <div class="bl-i"><div class="bl-b" style="background:#8e44ad"></div>Calidad segmental (score normal {dec}–{dec+9}: {muscle['leg_score_normal'][0]}–{muscle['leg_score_normal'][1]} · tronco: sin dato Tanita)</div>
-</div>
-<div class="seg-header"><div>Segmento</div><div style="padding-left:3px">60%–80%–100%–120%–140%</div><div>%</div><div>Cat.</div><div>Valor real</div></div>
+<div style="font-size:9px;color:#9c9a92;margin-bottom:5px">Score calidad normal {dec}–{dec+9}: {muscle['leg_score_normal'][0]}–{muscle['leg_score_normal'][1]} · tronco: sin dato Tanita</div>
+<div style="display:grid;grid-template-columns:75px 55px 70px 42px 55px 1fr;gap:3px;font-size:8px;color:#9c9a92;margin-bottom:3px;padding-bottom:2px;border-bottom:0.5px solid rgba(0,0,0,0.12)"><div>Segmento</div><div>Cantidad</div><div>Rango normal</div><div style="text-align:right">Score</div><div style="text-align:center">Clasif.</div><div>Ref.</div></div>
 {seg_mus}
 
 <div class="sec">Balance muscular y puntuación de piernas</div>
@@ -518,13 +515,13 @@ def generate_html(result, doctor_name=""):
   <div>
     <div style="font-size:9px;font-weight:500;margin-bottom:7px">Balance de masa muscular</div>
     <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:7px">
-      <div style="text-align:center"><div style="font-size:10px;font-weight:500">{bal['arm_left_kg']}</div><div style="width:22px;height:{int(bal['arm_left_kg']*10)}px;background:#2980b9;margin:3px auto;border-radius:2px 2px 0 0;min-height:18px"></div><div style="font-size:8px;color:#9c9a92">Izq.</div></div>
+      <div style="text-align:center"><div style="font-size:10px;font-weight:500">{bal['arm_left_kg']} kg</div><div style="width:22px;height:{int(bal['arm_left_kg']*10)}px;background:#2980b9;margin:3px auto;border-radius:2px 2px 0 0;min-height:18px"></div><div style="font-size:8px;color:#9c9a92">Izq.</div></div>
       <div style="text-align:center;padding-bottom:14px"><div style="font-size:8px;color:#5c5b55">Δ{bal['arm_diff_pct']}%</div><div style="font-size:8px">{bal['arm_cat']}</div></div>
-      <div style="text-align:center"><div style="font-size:10px;font-weight:500">{bal['arm_right_kg']}</div><div style="width:22px;height:{int(bal['arm_right_kg']*10)}px;background:#2980b9;margin:3px auto;border-radius:2px 2px 0 0;min-height:18px"></div><div style="font-size:8px;color:#9c9a92">Der.</div></div>
+      <div style="text-align:center"><div style="font-size:10px;font-weight:500">{bal['arm_right_kg']} kg</div><div style="width:22px;height:{int(bal['arm_right_kg']*10)}px;background:#2980b9;margin:3px auto;border-radius:2px 2px 0 0;min-height:18px"></div><div style="font-size:8px;color:#9c9a92">Der.</div></div>
       <div style="width:1px;height:55px;background:rgba(0,0,0,0.1);align-self:flex-end"></div>
-      <div style="text-align:center"><div style="font-size:10px;font-weight:500">{bal['leg_left_kg']}</div><div style="width:22px;height:{int(bal['leg_left_kg']*7)}px;background:#2980b9;margin:3px auto;border-radius:2px 2px 0 0;min-height:28px"></div><div style="font-size:8px;color:#9c9a92">Izq.</div></div>
+      <div style="text-align:center"><div style="font-size:10px;font-weight:500">{bal['leg_left_kg']} kg</div><div style="width:22px;height:{int(bal['leg_left_kg']*7)}px;background:#2980b9;margin:3px auto;border-radius:2px 2px 0 0;min-height:28px"></div><div style="font-size:8px;color:#9c9a92">Izq.</div></div>
       <div style="text-align:center;padding-bottom:20px"><div style="font-size:8px;color:#5c5b55">Δ{bal['leg_diff_pct']}%</div><div style="font-size:8px">{bal['leg_cat']}</div></div>
-      <div style="text-align:center"><div style="font-size:10px;font-weight:500">{bal['leg_right_kg']}</div><div style="width:22px;height:{int(bal['leg_right_kg']*7)}px;background:#2980b9;margin:3px auto;border-radius:2px 2px 0 0;min-height:28px"></div><div style="font-size:8px;color:#9c9a92">Der.</div></div>
+      <div style="text-align:center"><div style="font-size:10px;font-weight:500">{bal['leg_right_kg']} kg</div><div style="width:22px;height:{int(bal['leg_right_kg']*7)}px;background:#2980b9;margin:3px auto;border-radius:2px 2px 0 0;min-height:28px"></div><div style="font-size:8px;color:#9c9a92">Der.</div></div>
     </div>
     <div style="font-size:8px;color:#9c9a92">Brazos Δ{bal['arm_diff_pct']}% · Piernas Δ{bal['leg_diff_pct']}% — ambos &lt;10%</div>
   </div>

@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>SmartBioScan — Playground Reportes</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--teal:#0d7377;--teal-lt:#14a5a9;--teal-dim:#0d737712;--teal-mid:#0d737330;--ink:#0f1923;--ink-mid:#374151;--ink-lt:#6b7280;--border:#d1d5db;--bg:#eef2f7;--white:#fff;--green:#15803d;--green-bg:#dcfce7;--orange:#c2410c;--orange-bg:#ffedd5;--red:#b91c1c;--red-bg:#fee2e2;--blue:#1d4ed8;--page-w:210mm}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--ink);font-size:12px;line-height:1.45}
+#controls{position:sticky;top:0;z-index:100;background:#0f1923;color:#fff;display:flex;align-items:center;gap:10px;padding:8px 20px;flex-wrap:wrap}
+#controls .ct{flex:1;font-size:13px;font-weight:500}
+#controls button,#controls label{padding:5px 14px;border-radius:5px;font-size:12px;font-weight:600;cursor:pointer;border:none;font-family:inherit}
+.btn-print{background:var(--teal-lt);color:#fff}
+.btn-csv{background:#374151;color:#fff}
+#csv-input{display:none}
+#report-area{padding:20px 16px}
+.page{width:var(--page-w);background:var(--white);margin:0 auto 20px;padding:11mm 11mm 14mm;box-shadow:0 2px 20px rgba(0,0,0,.12);border-radius:3px;position:relative;page-break-after:always}
+.rh{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2.5px solid var(--teal);padding-bottom:6px;margin-bottom:8px}
+.rh-l .brand{font-size:19px;font-weight:700;color:var(--teal);letter-spacing:-.5px}
+.rh-l .sub{font-size:9.5px;color:var(--ink-lt);margin-top:1px}
+.rh-r{text-align:right}
+.rh-r .pname{font-size:14px;font-weight:600}
+.rh-r .pdate{font-size:9.5px;color:var(--ink-lt);margin-top:2px}
+.rh-r .nutri{font-size:9.5px;color:var(--teal);margin-top:1px}
+.vrow{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;margin-bottom:9px}
+.vc{background:#f8fafc;border:1px solid var(--border);border-radius:5px;padding:5px 7px}
+.vc.hi{background:var(--teal-dim);border-color:#99d6d8}
+.vc-lbl{font-size:8.5px;color:var(--ink-lt);text-transform:uppercase;letter-spacing:.5px;margin-bottom:1px}
+.vc-val{font-size:17px;font-weight:700;color:var(--ink);line-height:1}
+.vc-unit{font-size:8.5px;color:var(--ink-lt)}
+.st{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--teal);border-bottom:1px solid var(--teal-mid);padding-bottom:2px;margin:9px 0 5px}
+.st-dot{font-size:10px;font-weight:700;letter-spacing:.5px;color:var(--ink);margin:9px 0 5px;display:flex;align-items:center;gap:6px}
+.st-dot::before{content:'';display:block;width:8px;height:8px;border-radius:50%;background:var(--teal)}
+.kpg{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-bottom:8px}
+.kpc{border:1px solid var(--border);border-radius:6px;padding:6px 8px}
+.kpc-lbl{font-size:8.5px;color:var(--ink-lt);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+.kpc-val{font-size:20px;font-weight:700;color:var(--ink);line-height:1.05}
+.kpc-unit{font-size:8.5px;color:var(--ink-lt);margin-top:1px}
+.b{display:inline-block;font-size:8.5px;font-weight:600;padding:1px 7px;border-radius:20px;margin-top:3px}
+.b-g{background:var(--green-bg);color:var(--green)}
+.b-o{background:var(--orange-bg);color:var(--orange)}
+.b-r{background:var(--red-bg);color:var(--red)}
+.b-t{background:var(--teal-dim);color:var(--teal)}
+.b-b{background:#dbeafe;color:#1d4ed8}
+.brow{display:flex;align-items:center;gap:5px;margin-bottom:4px}
+.blbl{width:90px;font-size:9.5px;color:var(--ink-mid);text-align:right;flex-shrink:0}
+.btrk{flex:1;height:9px;background:#f1f5f9;border-radius:20px;overflow:hidden}
+.bfil{height:100%;border-radius:20px}
+.bval{width:46px;font-size:9.5px;font-weight:600;flex-shrink:0}
+.bbadge{flex-shrink:0}
+.sgt{width:100%;border-collapse:collapse;font-size:10px;margin-bottom:5px}
+.sgt th{background:var(--teal);color:#fff;font-weight:600;padding:4px 7px;font-size:9.5px;text-align:left}
+.sgt td{padding:3.5px 7px;border-bottom:1px solid #f1f5f9}
+.sgt tr:last-child td{border-bottom:none}
+.sgt tr:nth-child(even) td{background:#f9fafb}
+.minibar{display:inline-block;vertical-align:middle;width:50px;height:6px;background:#e5e7eb;border-radius:10px;overflow:hidden;margin-left:4px}
+.minibar span{display:block;height:100%;border-radius:10px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
+.four{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px}
+.sc{border:1px solid var(--border);border-radius:7px;padding:7px 9px}
+.sc-lbl{font-size:8.5px;color:var(--ink-lt);text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px}
+.sc-val{font-size:18px;font-weight:700;color:var(--ink);line-height:1}
+.sc-sub{font-size:8.5px;color:var(--ink-lt);margin-top:2px}
+.tbox{border:1px solid var(--border);border-radius:7px;padding:7px 9px}
+.tbox-t{font-size:9.5px;font-weight:600;color:var(--ink-mid);margin-bottom:5px}
+.trow{display:flex;justify-content:space-between;align-items:center;padding:3px 0;border-bottom:1px solid #f8f9fa;font-size:10.5px}
+.trow:last-child{border-bottom:none}
+.tr-l{color:var(--ink-mid)}
+.tr-v{font-weight:600;color:var(--ink)}
+.up{color:var(--green)!important}
+.dn{color:var(--orange)!important}
+.pfooter{position:absolute;bottom:5mm;left:11mm;right:11mm;display:flex;justify-content:space-between;align-items:center;font-size:7.5px;color:var(--ink-lt);border-top:1px solid var(--border);padding-top:3px}
+@media print{#controls{display:none!important}#report-area{padding:0}.page{box-shadow:none;border-radius:0;margin:0;width:100%}}
+</style>
+</head>
+<body>
+<div id="controls">
+  <span class="ct">SmartBioScan — Playground v2 &nbsp;·&nbsp; <span id="patient-label">Cargando...</span></span>
+  <label for="csv-input" class="btn-csv">📂 Cargar CSV</label>
+  <input type="file" id="csv-input" accept=".csv">
+  <button class="btn-print" onclick="window.print()">🖨️ Imprimir / PDF</button>
+</div>
+<div id="report-area"></div>
+<script>
+// ── physiqueRating
+function physiqueRating(rating){
+  var r=parseInt(rating)||0;
+  var C='<'+'/';  // Avoid browser parsing <\/tag> inside script
+  function bp(cx,fxp,bxp,axp,abdp,yNk,ySh,yCh,yWa,yBe,yGr,yTh,yKn,yAn,yFt){
+    return 'M '+(cx-1)+','+yNk
+      +' L '+(bxp-1)+','+yNk
+      +' Q '+bxp+','+ySh+' '+bxp+','+yCh
+      +' Q '+(bxp+1)+','+yWa+' '+bxp+','+yBe
+      +' Q '+bxp+','+yGr+' '+(bxp-2)+','+(yGr+4)
+      +' L '+(cx+1)+','+yFt
+      +' L '+fxp+','+yFt+' L '+fxp+','+yAn
+      +' L '+fxp+','+yKn+' L '+(fxp+1)+','+yTh
+      +' L '+(fxp+1)+','+yGr
+      +' Q '+axp+','+yBe+' '+axp+','+(yWa+4)
+      +' Q '+(abdp?(fxp-1):fxp)+','+yCh+' '+fxp+','+ySh
+      +' L '+(cx-1)+','+yNk+' Z';
+  }
+  function makeSVG(n){
+    var row=Math.floor((n-1)/3), col=(n-1)%3;
+    var MC=[[3,2],[6,4],[9,5]];
+    var fd=MC[col][0], bd=MC[col][1];
+    var FR=[[7,5,5,7],[5,3,3,6],[3,2,1,5]];
+    var fp_f=FR[row][0],fp_b=FR[row][1],fp_a=FR[row][2],hrf=FR[row][3];
+    var abd=[4,2,0][row], abd_fat=abd+fp_a;
+    // Coordenadas: frente a la izquierda (cx-fd), espalda a la derecha (cx+bd)
+    var cx=26, fx=cx-fd, bx=cx+bd, ax=fx-abd;
+    var fx_fat=cx-fd-fp_f, bx_fat=cx+bd+fp_b, ax_fat=Math.max(0,fx_fat-abd_fat);
+    var yNk=17,ySh=21,yCh=28,yWa=36,yBe=44,yGr=52,yTh=62,yKn=71,yAn=81,yFt=87;
+    var df=bp(cx,fx_fat,bx_fat,ax_fat,abd_fat,yNk,ySh,yCh,yWa,yBe,yGr,yTh,yKn,yAn,yFt);
+    var dm=bp(cx,fx,bx,ax,abd,yNk,ySh,yCh,yWa,yBe,yGr,yTh,yKn,yAn,yFt);
+    return '<svg viewBox="0 0 52 90" width="48" height="83" xmlns="http://www.w3.org/2000/svg">'
+      +'<path d="'+df+'" fill="#BFDBFE" stroke="#93C5FD" stroke-width="0.8"/>'
+      +'<circle cx="'+cx+'" cy="10" r="'+hrf+'" fill="#BFDBFE" stroke="#93C5FD" stroke-width="0.8"/>'
+      +'<path d="'+dm+'" fill="#1E40AF"/>'
+      +'<circle cx="'+cx+'" cy="10" r="5" fill="#1E40AF"/>'
+      +C+'svg>';
+  }
+  var axY='<div style="display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:0 2px 14px 0;font-size:6px;color:#93C5FD;font-weight:600;min-width:13px">'
+    +'<span>Alta'+C+'span>'
+    +'<span style="writing-mode:vertical-rl;transform:rotate(180deg);font-weight:400;font-size:5.5px">% Grasa'+C+'span>'
+    +'<span style="font-size:7px">&#8595;'+C+'span>'
+    +'<span>Baja'+C+'span>'
+    +C+'div>';
+  var grid='<div style="display:flex;flex-direction:column;gap:1px">';
+  for(var fila=0;fila<3;fila++){
+    grid+='<div style="display:flex;gap:1px">';
+    for(var c=0;c<3;c++){
+      var n=fila*3+c+1, active=(n===r);
+      var bg=active?'#FEF9C3':'transparent';
+      var brd=active?'1.5px solid #F97316':'0.5px solid #D1D5DB';
+      var star=active?'<div style="font-size:6px;color:#ef4444;text-align:center;line-height:1">&#9733;'+C+'div>':'';
+      grid+='<div style="border:'+brd+';border-radius:2px;background:'+bg+';padding:1px 0;display:flex;flex-direction:column;align-items:center">'
+        +makeSVG(n)+star+C+'div>';
+    }
+    grid+=C+'div>';
+  }
+  grid+=C+'div>';
+  var axX='<div style="display:flex;justify-content:space-between;padding-top:1px;font-size:5.5px;color:#1E40AF;font-weight:600">'
+    +'<span>Baja'+C+'span><span style="font-weight:400">&#205;ndice de masa muscular &#8594;'+C+'span><span>Alta'+C+'span>'+C+'div>';
+  var leg='<div style="display:flex;flex-direction:column;gap:4px;padding-left:5px;min-width:26px;max-width:26px;align-self:center">'
+    +'<div style="display:flex;align-items:center;gap:2px;font-size:5.5px;line-height:1.3"><span style="width:6px;height:6px;border-radius:50%;background:#1E40AF;display:inline-block;flex-shrink:0">'+C+'span>Representa el m&uacute;sculo'+C+'div>'
+    +'<div style="display:flex;align-items:center;gap:2px;font-size:5.5px;line-height:1.3"><span style="width:6px;height:6px;border-radius:50%;background:#BFDBFE;border:0.5px solid #93C5FD;display:inline-block;flex-shrink:0">'+C+'span>Representa la grasa'+C+'div>'
+    +'<div style="border-top:0.5px solid #e5e7eb;margin:3px 0">'+C+'div>'
+    +'<div style="font-size:8px;font-weight:700">Rating '+r+'/9'+C+'div>'
+    +'<div style="font-size:5.5px;color:var(--ink-lt)">Delgado y musculoso'+C+'div>'
+    +C+'div>';
+  return '<div style="display:flex;align-items:flex-start">'
+    +'<div><div style="display:flex">'+axY+'<div>'+grid+axX+C+'div>'+C+'div>'+C+'div>'
+    +leg+C+'div>';
+}
+</script>
+<script>
+var DEMO = {
+  full_name:'Stella Calderón', measurement_date:'16/04/2026 · 10:06',
+  height_cm:174, age:48, sex:'Femenino', weight_kg:53.9, bmi:21.6,
+  heart_rate:68, bmr_kcal:1274, visceral_fat:3, metabolic_age:33,
+  body_fat_pct:18.7, fat_label:'Atlético',
+  total_body_water_l:29.75, tbw_pct:55.2,
+  muscle_mass_kg:41.6, smm_kg:35.0, smm_index:11.56,
+  bone_mass_kg:2.2, bone_pct:4.08, bone_label:'Leve',
+  protein_kg:8.76, protein_pct:16.3, protein_label:'Alto',
+  physique_rating:8,
+  fat_trunk_pct:9.5, fat_trunk_lvl:40, fat_trunk_label:'Atlética',
+  fat_arm_l_pct:21.2, fat_arm_l_lvl:76, fat_arm_l_label:'Atlética',
+  fat_arm_r_pct:19.0, fat_arm_r_lvl:68, fat_arm_r_label:'Atlética',
+  fat_leg_l_pct:31.9, fat_leg_l_lvl:100, fat_leg_l_label:'Normal',
+  fat_leg_r_pct:31.6, fat_leg_r_lvl:99, fat_leg_r_label:'Normal',
+  muscle_trunk_kg:24.8, muscle_trunk_pct:100,
+  muscle_arm_l_kg:1.95, muscle_arm_l_pct:81, muscle_arm_l_score:54,
+  muscle_arm_r_kg:2.05, muscle_arm_r_pct:85, muscle_arm_r_score:59,
+  muscle_leg_l_kg:6.3, muscle_leg_l_pct:76, muscle_leg_l_score:73,
+  muscle_leg_r_kg:6.5, muscle_leg_r_pct:79, muscle_leg_r_score:73,
+  muscle_quality_total:69, muscle_quality_label:'Bueno',
+  balance_arm_pct:4.9, balance_leg_pct:3.1, leg_score:73,
+  ecw_l:11.19, icw_l:18.56, ecw_icw_ratio:0.6,
+  prev_weight:51.0, prev_muscle:40.45, prev_fat_pct:16.4, prev_bmr:1240,
+  trend_from:'2023-03', trend_to:'2026-04',
+  nutri_name:'García Paz', nutri_specialty:'Nutricionista'
+};
+
+// ── Helpers ──────────────────────────────────────────────────
+function f(v,d){d=d===undefined?1:d;return (v!=null&&v!=='')?(parseFloat(v).toFixed(d)):'—';}
+function fi(v){return (v!=null&&v!=='')?(Math.round(parseFloat(v)))+'':'—';}
+function pct(v,max){return Math.min(100,parseFloat(v)/parseFloat(max)*100);}
+function bc(lbl){
+  var l=(lbl||'').toLowerCase();
+  if(l.indexOf('atlét')>=0||l.indexOf('fitness')>=0||l.indexOf('excelente')>=0||l.indexOf('saludable')>=0||l.indexOf('bueno')>=0) return 'b-g';
+  if(l.indexOf('normal')>=0) return 'b-b';
+  if(l.indexOf('leve')>=0||l.indexOf('moderado')>=0) return 'b-o';
+  if(l.indexOf('riesgo')>=0||l.indexOf('sarcopenia')>=0) return 'b-r';
+  return 'b-t';
+}
+function bcolor(lbl){
+  var l=(lbl||'').toLowerCase();
+  if(l.indexOf('atlét')>=0||l.indexOf('normal')>=0||l.indexOf('excelente')>=0) return '#16a34a';
+  if(l.indexOf('leve')>=0||l.indexOf('moderado')>=0) return '#ea580c';
+  return '#0d7377';
+}
+function mkBar(label,val,max,unit,badge,refMin,refMax,rangeLabel){
+  if(val==null||val==='') return '';
+  var w=pct(val,max), col=bcolor(badge);
+  var refMinPct=refMin?Math.min(100,parseFloat(refMin)/max*100):null;
+  var refMaxPct=refMax?Math.min(100,parseFloat(refMax)/max*100):null;
+  var bar='<div class="btrk" style="position:relative">';
+  if(refMinPct!=null&&refMaxPct!=null){
+    bar+='<div style="position:absolute;left:'+refMinPct+'%;width:'+(refMaxPct-refMinPct)+'%;height:100%;background:#fca5a5;opacity:0.45;border-radius:20px"><\/div>';
+  }
+  bar+='<div class="bfil" style="width:'+w+'%;background:'+col+'"><\/div>';
+  bar+='<div style="position:absolute;left:'+w+'%;top:-2px;bottom:-2px;width:2px;background:'+col+';border-radius:1px;transform:translateX(-50%)"><\/div>';
+  bar+='<\/div>';
+  var extraInfo=rangeLabel?'<span style="font-size:8px;color:var(--ink-lt);margin-left:4px">'+rangeLabel+'<\/span>':'';
+  return '<div class="brow"><span class="blbl">'+label+'<\/span>'
+    +bar
+    +'<span class="bval">'+f(val)+' <span style="font-size:8px;font-weight:400;color:var(--ink-lt)">'+unit+'<\/span><\/span>'
+    +(badge?'<span class="b '+bc(badge)+' bbadge">'+badge+'<\/span>':'')
+    +'<\/div>'
+    +(refMinPct!=null?'<div style="display:flex;padding-left:90px;font-size:7.5px;color:var(--ink-lt);margin-top:-2px;margin-bottom:2px">Normal '+refMin+'–'+refMax+'<\/div>':'');
+}
+function mkMinibar(pct_v,col){
+  var w=Math.min(100,parseFloat(pct_v)||0);
+  return '<span class="minibar"><span style="width:'+w+'%;background:'+col+'"><\/span><\/span>';
+}
+
+// ── Segmental row (grasa) — sin columna nivel relativo
+function srow(lbl,pct_v,badge,ref){
+  return '<tr><td>'+lbl+'<\/td>'
+    +'<td>'+f(pct_v)+'%<\/td>'
+    +'<td><span class="b '+bc(badge)+'">'+badge+'<\/span><\/td>'
+    +'<td style="font-size:8.5px;color:var(--ink-lt)">'+ref+'<\/td><\/tr>';
+}
+
+// ── Muscular segmental row — Cantidad (kg) + Rango normal
+function mrow(lbl,kg,rangeKg,score,classif,ref){
+  return '<tr><td>'+lbl+'<\/td>'
+    +'<td>'+(kg!=null?f(kg)+' kg':'—')+'<\/td>'
+    +'<td style="font-size:8.5px;color:var(--ink-lt)">'+(rangeKg||'—')+'<\/td>'
+    +'<td>'+(score||'—')+'<\/td>'
+    +'<td>'+(classif?'<span class="b '+(classif.indexOf('Norm')>=0?'b-g':'b-t')+'">'+classif+'<\/span>':'—')+'<\/td>'
+    +'<td style="font-size:8.5px;color:var(--ink-lt)">'+(ref!='—'?'score ('+ref+')':ref)+'<\/td><\/tr>';
+}
+
+// ── PAGE 1 ───────────────────────────────────────────────────
+function page1(d){
+  var fm=parseFloat(d.weight_kg)*parseFloat(d.body_fat_pct)/100;
+  var hcell=d.heart_rate
+    ?'<div class="vc hi"><div class="vc-lbl">Frec. Cardíaca<\/div><div class="vc-val">'+fi(d.heart_rate)+'<\/div><div class="vc-unit">lpm<\/div><\/div>'
+    :'<div class="vc"><\/div>';
+
+  var html='<div class="page" id="p1">';
+  html+='<div class="rh"><div class="rh-l"><div class="brand">SmartBioScan<\/div><div class="sub">Resultados de Composición Corporal<\/div><\/div>'
+    +'<div class="rh-r"><div class="pname">'+d.full_name+'<\/div><div class="pdate">'+d.measurement_date+'<\/div>'
+    +(d.nutri_name?'<div class="nutri">Lic. '+d.nutri_name+' · '+(d.nutri_specialty||'')+'<\/div>':'')
+    +'<\/div><\/div>';
+  html+='<div class="vrow">'
+    +'<div class="vc"><div class="vc-lbl">Altura<\/div><div class="vc-val">'+fi(d.height_cm)+'<\/div><div class="vc-unit">cm<\/div><\/div>'
+    +'<div class="vc"><div class="vc-lbl">Edad<\/div><div class="vc-val">'+fi(d.age)+'<\/div><div class="vc-unit">años<\/div><\/div>'
+    +'<div class="vc"><div class="vc-lbl">Sexo<\/div><div class="vc-val" style="font-size:12px;padding-top:4px">'+(d.sex||'—')+'<\/div><\/div>'
+    +'<div class="vc"><div class="vc-lbl">Peso<\/div><div class="vc-val">'+f(d.weight_kg)+'<\/div><div class="vc-unit">kg<\/div><\/div>'
+    +'<div class="vc hi"><div class="vc-lbl">IMC<\/div><div class="vc-val">'+f(d.bmi)+'<\/div><\/div>'
+    +hcell+'<\/div>';
+  html+='<div class="st">Parámetros clave<\/div>';
+  html+='<div class="kpg">'
+    +'<div class="kpc"><div class="kpc-lbl">TMB<\/div><div class="kpc-val">'+fi(d.bmr_kcal)+'<\/div><div class="kpc-unit">kcal / día<\/div><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">Grasa visceral<\/div><div class="kpc-val" style="color:'+(parseInt(d.visceral_fat)<=12?'var(--green)':'var(--orange)')+'">'+fi(d.visceral_fat)+'<\/div>'
+      +'<span class="b '+(parseInt(d.visceral_fat)<=12?'b-g':'b-o')+'">'+(parseInt(d.visceral_fat)<=12?'Saludable':'Levemente alto')+'<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">Edad metabólica<\/div><div class="kpc-val">'+fi(d.metabolic_age)+'<\/div>'
+      +'<div class="kpc-unit">años'+(d.metabolic_age&&d.age?' <span style="color:'+(parseFloat(d.metabolic_age)<parseFloat(d.age)?'var(--green)':'var(--orange)')+'">('+(parseFloat(d.metabolic_age)-parseFloat(d.age)>0?'+':'')+f(parseFloat(d.metabolic_age)-parseFloat(d.age),0)+' vs cronológica)<\/span>':'')+'<\/div><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">% Grasa global<\/div><div class="kpc-val">'+f(d.body_fat_pct)+'<span style="font-size:12px;font-weight:400">%<\/span><\/div>'
+      +'<span class="b '+bc(d.fat_label||'')+'">'+(d.fat_label||'')+'<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">ACT<\/div><div class="kpc-val">'+f(d.total_body_water_l)+'<\/div><div class="kpc-unit">L · '+f(d.tbw_pct)+'%<\/div><span class="b b-g">Normal<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">MME estimada ±6%<\/div><div class="kpc-val">'+f(d.smm_kg)+'<\/div><div class="kpc-unit">kg<\/div><span class="b b-g">Sin sarcopenia<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">Balance muscular<\/div><div class="kpc-val" style="font-size:13px">Brazos Δ'+f(d.balance_arm_pct)+'%<\/div><span class="b b-t">Normal<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">Punt. piernas<\/div><div class="kpc-val">'+(d.leg_score||'—')+'<\/div><span class="b b-g">↑ Alta<\/span><\/div>'
+    +'<\/div>';
+  html+='<div class="st-dot">Masa grasa<\/div>';
+  html+='<div style="display:grid;grid-template-columns:50% 15% 35%;gap:8px;align-items:stretch">';
+  html+='<div>'
+    +mkBar('Cantidad',fm.toFixed(2),50,'kg',d.fat_label,null,null,'Normal 40-49')
+    +mkBar('% del peso',d.body_fat_pct,54,'%',d.fat_label,23,35,'23–35%')
+    +'<div class="st" style="margin-top:7px">Análisis Músculo–Grasa<\/div>'
+    +'<div class="three">'
+    +'<div class="sc"><div class="sc-lbl">Peso (kg)<\/div><div class="sc-val">'+f(d.weight_kg)+'<\/div><\/div>'
+    +'<div class="sc"><div class="sc-lbl">Masa muscular (kg)<\/div><div class="sc-val">'+f(d.muscle_mass_kg)+'<\/div><\/div>'
+    +'<div class="sc"><div class="sc-lbl">Masa grasa (kg)<\/div><div class="sc-val">'+f(fm)+'<\/div><\/div>'
+    +'<\/div>'
+    +'<\/div>';
+  var viscBadge=parseInt(d.visceral_fat)<=12?'b-g':(parseInt(d.visceral_fat)<=19?'b-o':'b-r');
+  var viscLabel=parseInt(d.visceral_fat)<=12?'Saludable':(parseInt(d.visceral_fat)<=19?'Levemente alto':'Alto');
+  html+='<div class="kpc" style="text-align:center;display:flex;flex-direction:column;justify-content:flex-start">'
+    +'<div class="kpc-lbl" style="font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Grasa Visceral<\/div>'
+    +'<div style="font-size:38px;font-weight:700;line-height:1;color:var(--ink);margin:4px 0">'+fi(d.visceral_fat)+'<\/div>'
+    +'<span class="b '+viscBadge+'" style="margin-bottom:5px;display:inline-block">'+viscLabel+'<\/span>'
+    +'<div style="height:6px;border-radius:3px;background:linear-gradient(90deg,#16a34a 0%,#16a34a 20%,#ea580c 35%,#dc2626 60%,#dc2626 100%);margin:4px 0 2px"><\/div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:6.5px;color:var(--ink-lt);margin-bottom:4px"><span>1<\/span><span>12<\/span><span>19<\/span><span>59<\/span><\/div>'
+    +'<div style="font-size:7px;color:var(--ink-lt);line-height:1.7;text-align:left">'
+    +'<span style="color:var(--green)">1–12 Saludable ★<\/span><br>'
+    +'<span style="color:var(--orange)">13–19 Levemente alto<\/span><br>'
+    +'<span style="color:var(--red)">20–59 Alto<\/span>'
+    +'<\/div>'
+    +'<div style="border-top:0.5px solid var(--border);margin-top:6px;padding-top:6px;font-size:7px;color:var(--ink-lt);line-height:1.5">'
+    +'Fuente: Tanita Europe. Niveles elevados se asocian a riesgo cardiovascular y diabetes tipo 2.'
+    +'<\/div>'
+    +'<\/div>';
+  html+='<div class="kpc">'
+    +'<div class="kpc-lbl">Physique Rating<\/div>'
+    +physiqueRating(d.physique_rating)
+    +'<\/div>';
+  html+='<\/div>';
+  html+='<div style="margin-top:5px;font-size:8.5px;color:var(--ink-lt);border:0.5px solid var(--border);border-radius:4px;padding:4px 8px"><strong>Peso total:<\/strong> '+f(d.weight_kg)+' kg &nbsp;<span style="color:var(--green);font-weight:600">Normal<\/span><\/div>';
+  html+='<div class="st">Grasa Segmental — % real<\/div>';
+  html+='<table class="sgt"><thead><tr><th>Segmento<\/th><th>% real<\/th><th>Clasificación<\/th><th>Referencia / Ideal<\/th><\/tr><\/thead><tbody>';
+  html+=srow('Tronco',d.fat_trunk_pct,d.fat_trunk_label,'ref 20–28% · ideal 24%');
+  html+=srow('Brazo izq.',d.fat_arm_l_pct,d.fat_arm_l_label,'ref 23–33% · ideal 28%');
+  html+=srow('Brazo der.',d.fat_arm_r_pct,d.fat_arm_r_label,'ref 23–33% · ideal 28%');
+  html+=srow('Pierna izq.',d.fat_leg_l_pct,d.fat_leg_l_label,'ref 26–38% · ideal 32%');
+  html+=srow('Pierna der.',d.fat_leg_r_pct,d.fat_leg_r_label,'ref 26–38% · ideal 32%');
+  html+='<\/tbody><\/table>';
+  html+='<div class="pfooter"><span>SmartBioScan · Reporte de Composición Corporal<\/span><span>'+d.full_name+' · '+d.measurement_date+'<\/span><span>Página 1 de 3<\/span><\/div>';
+  html+='<\/div>';
+  return html;
+}
+
+// ── PAGE 2 ───────────────────────────────────────────────────
+function page2(d){
+  var html='<div class="page" id="p2">';
+  html+='<div class="rh"><div class="rh-l"><div class="brand">SmartBioScan<\/div><div class="sub">Masa Muscular Esquelética · Segmental · Calidad<\/div><\/div>'
+    +'<div class="rh-r"><div class="pname">'+d.full_name+'<\/div><div class="pdate">'+d.measurement_date+'<\/div><\/div><\/div>';
+  html+='<div class="st">Masa Muscular Esquelética (MME) — factor de conversión [12,13] <span style="font-size:8px;color:var(--ink-lt)">Estimativo ±6%<\/span><\/div>';
+  html+='<div class="three" style="margin-bottom:8px">'
+    +'<div class="sc"><div class="sc-lbl">Masa musc. Tanita<\/div><div class="sc-val">'+f(d.muscle_mass_kg)+' <span style="font-size:11px;font-weight:400">kg<\/span><\/div><\/div>'
+    +'<div class="sc"><div class="sc-lbl">MME estimada +1.19<\/div><div class="sc-val">'+f(d.smm_kg)+' <span style="font-size:11px;font-weight:400">kg<\/span><\/div><\/div>'
+    +'<div class="sc" style="border-color:var(--teal);background:var(--teal-dim)"><div class="sc-lbl">IMME (MME÷alt²)<\/div><div class="sc-val">'+f(d.smm_index)+' <span style="font-size:11px;font-weight:400">kg/m²<\/span><\/div><span class="b b-g" style="margin-top:4px">Sin sarcopenia<\/span><\/div>'
+    +'<\/div>';
+  var immePos=Math.min(98,parseFloat(d.smm_index)/20*100);
+  html+='<div style="padding:6px 8px;background:#f9fafb;border:1px solid var(--border);border-radius:7px;margin-bottom:9px">'
+    +'<div style="font-size:8.5px;color:var(--ink-lt);margin-bottom:4px">IMME — escala 0–20 kg/m² · umbrales EWGSOP2 2019<\/div>'
+    +'<div style="position:relative;height:14px;background:linear-gradient(90deg,#fca5a5 0%,#fde68a 25%,#86efac 45%,#86efac 100%);border-radius:20px;margin-bottom:4px">'
+    +'<div style="position:absolute;left:'+immePos+'%;top:-2px;bottom:-2px;width:3px;background:var(--teal);border-radius:2px;transform:translateX(-50%)"><\/div>'
+    +'<div style="position:absolute;left:'+immePos+'%;top:-14px;transform:translateX(-50%);font-size:8px;font-weight:700;color:var(--teal);white-space:nowrap">'+(d.full_name||'').split(' ')[0]+' '+f(d.smm_index)+'<\/div>'
+    +'<\/div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:7.5px;color:var(--ink-lt)"><span>Sarcopenia &lt;6.0<\/span><span>±5–6%<\/span><span>Normal ≥7.0 kg/m²<\/span><\/div>'
+    +'<\/div>';
+  html+='<div class="st">Masa Muscular Segmental — Cantidad y Calidad<\/div>';
+  html+='<div style="font-size:8.5px;color:var(--ink-lt);margin-bottom:4px">Score calidad normal 40–49: 42–67 · tronco: sin dato Tanita<\/div>';
+  var hf=parseFloat(d.height_cm)/158;
+  var isFem=(d.sex||'').toLowerCase().indexOf('f')>=0;
+  var idealArm=parseFloat(isFem?2.20:3.50)*hf;
+  var idealLeg=parseFloat(isFem?7.50:10.0)*hf;
+  function rangeKg(ideal){return f(ideal*0.8,1)+'–'+f(ideal*1.2,1)+' kg';}
+  html+='<table class="sgt"><thead><tr><th>Segmento<\/th><th>Cantidad (kg)<\/th><th>Rango normal<\/th><th>Score calidad<\/th><th>Clasificación<\/th><th>Ref.<\/th><\/tr><\/thead><tbody>';
+  html+=mrow('Tronco',d.muscle_trunk_kg,'—',null,null,'—');
+  html+=mrow('Brazo izq.',d.muscle_arm_l_kg,rangeKg(idealArm),d.muscle_arm_l_score,'Normal','42–67');
+  html+=mrow('Brazo der.',d.muscle_arm_r_kg,rangeKg(idealArm),d.muscle_arm_r_score,'Normal','42–67');
+  html+=mrow('Pierna izq.',d.muscle_leg_l_kg,rangeKg(idealLeg),d.muscle_leg_l_score,'↑ Norm','42–67');
+  html+=mrow('Pierna der.',d.muscle_leg_r_kg,rangeKg(idealLeg),d.muscle_leg_r_score,'↑ Norm','42–67');
+  html+='<\/tbody><\/table>';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center;background:var(--teal-dim);border:1px solid #99d6d8;border-radius:6px;padding:6px 10px;margin-bottom:8px">'
+    +'<span style="font-size:10px;font-weight:700;color:var(--teal)">Calidad Muscular Total (MQ)<\/span>'
+    +'<span style="font-size:22px;font-weight:800;color:var(--teal)">'+(d.muscle_quality_total||'—')+' <span style="font-size:12px;font-weight:400">'+(d.muscle_quality_label||'')+'<\/span><\/span>'
+    +'<\/div>';
+  html+='<div class="st">Balance muscular y puntuación de piernas<\/div>';
+  html+='<div class="two">';
+  html+='<div><div style="font-size:9.5px;font-weight:600;color:var(--ink-mid);margin-bottom:5px">Balance de masa muscular<\/div>'
+    +'<div class="four">'
+    +'<div class="sc"><div class="sc-lbl">Brazo izq.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_arm_l_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><div class="sc-sub">Δ'+f(d.balance_arm_pct)+'% Normal<\/div><\/div>'
+    +'<div class="sc"><div class="sc-lbl">Brazo der.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_arm_r_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
+    +'<div class="sc"><div class="sc-lbl">Pierna izq.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_leg_l_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><div class="sc-sub">Δ'+f(d.balance_leg_pct)+'% Normal<\/div><\/div>'
+    +'<div class="sc"><div class="sc-lbl">Pierna der.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_leg_r_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
+    +'<\/div><\/div>';
+  html+='<div class="sc" style="text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">'
+    +'<div class="sc-lbl">Puntuación muscular de piernas<\/div>'
+    +'<div style="font-size:56px;font-weight:800;color:var(--teal);line-height:1">'+(d.leg_score||'—')+'<\/div>'
+    +'<div style="font-size:9.5px;color:var(--ink-lt)">score piernas<\/div>'
+    +'<span class="b b-g" style="margin-top:5px">↑ Alta<\/span>'
+    +'<\/div>';
+  html+='<\/div>';
+  html+='<div class="st">Análisis de Composición Corporal<\/div>';
+  html+='<div class="two">';
+  html+='<div><div class="st-dot" style="font-size:9.5px;margin:4px 0">Proteína<\/div>'
+    +mkBar('Cantidad',d.protein_kg,20,'kg',d.protein_label)
+    +mkBar('% del peso',d.protein_pct,20,'%',d.protein_label)+'<\/div>';
+  html+='<div><div class="st-dot" style="font-size:9.5px;margin:4px 0">Masa ósea<\/div>'
+    +mkBar('Cantidad',d.bone_mass_kg,4,'kg',d.bone_label)
+    +mkBar('% del peso',d.bone_pct,7,'%',d.bone_label)+'<\/div>';
+  html+='<\/div>';
+  html+='<div class="pfooter"><span>SmartBioScan · Reporte de Composición Corporal<\/span><span>'+d.full_name+' · '+d.measurement_date+'<\/span><span>Página 2 de 3<\/span><\/div>';
+  html+='<\/div>';
+  return html;
+}
+
+// ── PAGE 3 ───────────────────────────────────────────────────
+function page3(d){
+  var mlg=f(parseFloat(d.weight_kg)-parseFloat(d.weight_kg)*parseFloat(d.body_fat_pct)/100);
+  var fmkg=f(parseFloat(d.weight_kg)*parseFloat(d.body_fat_pct)/100);
+  var dw=d.prev_weight?(parseFloat(d.weight_kg)-parseFloat(d.prev_weight)).toFixed(1):null;
+  var dm=d.prev_muscle?(parseFloat(d.muscle_mass_kg)-parseFloat(d.prev_muscle)).toFixed(2):null;
+  var df=d.prev_fat_pct?(parseFloat(d.body_fat_pct)-parseFloat(d.prev_fat_pct)).toFixed(1):null;
+  var db=d.prev_bmr?(parseFloat(d.bmr_kcal)-parseFloat(d.prev_bmr)).toFixed(0):null;
+  function delt(v,dec){dec=dec===undefined?1:dec;if(v==null)return'';var n=parseFloat(v);return(n>0?'+':'')+n.toFixed(dec);}
+  function tc(v){return parseFloat(v)>0?'up':parseFloat(v)<0?'dn':'';}
+  function arr(v){return parseFloat(v)>0?'↑':parseFloat(v)<0?'↓':'→';}
+
+  var html='<div class="page" id="p3">';
+  html+='<div class="rh"><div class="rh-l"><div class="brand">SmartBioScan<\/div><div class="sub">Agua Corporal · Control de Peso · Evolución<\/div><\/div>'
+    +'<div class="rh-r"><div class="pname">'+d.full_name+'<\/div><div class="pdate">'+d.measurement_date+'<\/div><\/div><\/div>';
+  html+='<div class="st-dot">Agua corporal total<\/div>';
+  html+='<div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">';
+  html+='<div>'+mkBar('Cantidad total (ACT)',d.total_body_water_l,60,'L','Normal')+mkBar('Porcentaje corporal',d.tbw_pct,72,'%','Normal')+'<\/div>';
+  html+='<div class="sc" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">'
+    +'<div class="sc-lbl">ACT<\/div>'
+    +'<div style="font-size:20px;font-weight:800;color:#2563eb;line-height:1">'+f(d.tbw_pct)+'%<\/div>'
+    +'<span class="b b-g" style="margin-top:3px">Normal<\/span>'
+    +'<div style="font-size:8px;color:var(--ink-lt);margin-top:2px">'+f(d.total_body_water_l)+' L<\/div>'
+    +'<\/div>';
+  html+='<\/div>';
+  html+='<div class="st">Compartimentos estimados<\/div>';
+  var ecwPct=d.ecw_l&&d.total_body_water_l?Math.round(parseFloat(d.ecw_l)/parseFloat(d.total_body_water_l)*100):null;
+  var icwPct=d.icw_l&&d.total_body_water_l?Math.round(parseFloat(d.icw_l)/parseFloat(d.total_body_water_l)*100):null;
+  html+='<div class="three" style="margin-bottom:8px">'
+    +'<div class="sc"><div class="sc-lbl">Agua extracelular (AEC)<\/div><div class="sc-val">'+f(d.ecw_l)+' <span style="font-size:10px;font-weight:400">L<\/span><\/div><div class="sc-sub">'+(ecwPct?ecwPct+'%':'—')+'<\/div><\/div>'
+    +'<div class="sc"><div class="sc-lbl">Agua intracelular (AIC)<\/div><div class="sc-val">'+f(d.icw_l)+' <span style="font-size:10px;font-weight:400">L<\/span><\/div><div class="sc-sub">'+(icwPct?icwPct+'%':'—')+'<\/div><\/div>'
+    +'<div class="sc" style="border-color:'+(parseFloat(d.ecw_icw_ratio)<0.65?'var(--green)':'var(--orange)')+'"><div class="sc-lbl">Ratio AEC/AIC<\/div><div class="sc-val">'+f(d.ecw_icw_ratio,2)+'<\/div><span class="b '+(parseFloat(d.ecw_icw_ratio)<0.65?'b-g':'b-o')+'">'+(parseFloat(d.ecw_icw_ratio)<0.65?'Normal':'↑ Retención')+'<\/span><\/div>'
+    +'<\/div>';
+  var ecwFlex=d.ecw_l||1, icwFlex=d.icw_l||1;
+  html+='<div style="padding:7px 10px;background:#f9fafb;border:1px solid var(--border);border-radius:7px;margin-bottom:10px">'
+    +'<div style="display:flex;gap:2px;margin:4px 0 6px">'
+    +'<div style="flex:'+ecwFlex+';height:14px;background:#bfdbfe;border-radius:4px 0 0 4px;display:flex;align-items:center;justify-content:center"><span style="font-size:8px;font-weight:600;color:#1d4ed8">AEC '+f(d.ecw_l)+'L ('+(ecwPct||'—')+'%)<\/span><\/div>'
+    +'<div style="flex:'+icwFlex+';height:14px;background:#bbf7d0;border-radius:0 4px 4px 0;display:flex;align-items:center;justify-content:center"><span style="font-size:8px;font-weight:600;color:#15803d">AIC '+f(d.icw_l)+'L ('+(icwPct||'—')+'%)<\/span><\/div>'
+    +'<\/div>'
+    +'<div style="height:12px;background:linear-gradient(90deg,#fca5a5 0%,#fde68a 35%,#86efac 55%,#86efac 100%);border-radius:20px;position:relative">'
+    +(d.ecw_icw_ratio?'<div style="position:absolute;left:'+Math.min(96,parseFloat(d.ecw_icw_ratio)/0.9*100)+'%;top:-2px;bottom:-2px;width:3px;background:var(--red);border-radius:2px;transform:translateX(-50%)"><\/div>':'')
+    +'<\/div>'
+    +'<div style="display:flex;justify-content:space-between;margin-top:3px;font-size:7.5px;color:var(--ink-lt)"><span>0.4 ↓ deshidratación<\/span><span>±10–15%<\/span><span style="color:var(--orange)">0.65 ↑ retención<\/span><\/div>'
+    +'<\/div>';
+  html+='<div class="st">Control de peso y evolución<\/div>';
+  html+='<div class="two" style="margin-bottom:8px">';
+  html+='<div>'
+    +'<div class="tbox" style="margin-bottom:5px"><div class="tbox-t">Control de peso por composición<\/div>'
+    +'<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v">'+f(d.weight_kg)+' kg<\/span><\/div>'
+    +'<div class="trow"><span class="tr-l">MLG<\/span><span class="tr-v">'+mlg+' kg<\/span><\/div>'
+    +'<div class="trow"><span class="tr-l">Masa grasa<\/span><span class="tr-v">'+fmkg+' kg ('+f(d.body_fat_pct)+'%)<\/span><\/div>'
+    +'<\/div>'
+    +'<div style="border:0.5px solid var(--border);border-radius:4px;border-left:3px solid var(--green);padding:6px 8px;margin-bottom:6px;font-size:10px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'
+    +'<div style="font-size:9px;font-weight:600">Estado actual<\/div>'
+    +'<span class="b b-g">Mantener peso<\/span>'
+    +'<\/div>'
+    +'<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:0.5px solid #f3f4f6"><span style="color:var(--ink-mid);font-size:9px">% grasa actual<\/span><span style="font-weight:500;font-size:9px">'+f(d.body_fat_pct)+'% <span class="b '+bc(d.fat_label||'')+'" style="font-size:7px">'+(d.fat_label||'')+'<\/span><\/span><\/div>'
+    +'<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:0.5px solid #f3f4f6"><span style="color:var(--ink-mid);font-size:9px">Rango fitness 40–49<\/span><span style="font-weight:500;font-size:9px">18–24%<\/span><\/div>'
+    +'<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--ink-mid);font-size:9px">Recomendación<\/span><span style="font-weight:500;font-size:9px">Mantener peso<\/span><\/div>'
+    +'<\/div>'
+    +'<div style="border:0.5px solid var(--border);border-radius:4px;border-left:3px solid var(--blue);padding:6px 8px;font-size:10px">'
+    +'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'
+    +'<div style="font-size:9px;font-weight:600">Ganancia muscular<\/div>'
+    +'<span class="b b-b">+2 kg músculo<\/span>'
+    +'<\/div>'
+    +'<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:0.5px solid #f3f4f6"><span style="color:var(--ink-mid);font-size:9px">Peso proyectado<\/span><span style="font-weight:500;font-size:9px">'+f(parseFloat(d.weight_kg)+2)+' kg <span style="color:var(--green);font-size:8px">+2.0 kg<\/span><\/span><\/div>'
+    +'<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:0.5px solid #f3f4f6"><span style="color:var(--ink-mid);font-size:9px">% grasa resultante<\/span><span style="font-weight:500;font-size:9px">'+f(parseFloat(d.body_fat_pct)/100*parseFloat(d.weight_kg)/(parseFloat(d.weight_kg)+2)*100)+'%<\/span><\/div>'
+    +'<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--ink-mid);font-size:9px">Masa muscular<\/span><span style="font-weight:500;font-size:9px">'+f(parseFloat(d.muscle_mass_kg)+2)+' kg <span style="color:var(--green);font-size:8px">+2.0 kg<\/span><\/span><\/div>'
+    +'<\/div>'
+    +'<\/div>';
+  html+='<div>'
+    +'<div class="tbox" style="margin-bottom:5px"><div class="tbox-t">Tendencia '+(d.trend_from||'')+' → '+(d.trend_to||'')+'<\/div>'
+    +(dw!=null?'<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v '+tc(dw)+'">'+arr(dw)+' '+delt(dw)+' kg<\/span><\/div>':'')
+    +(dm!=null?'<div class="trow"><span class="tr-l">Masa muscular<\/span><span class="tr-v '+tc(dm)+'">'+arr(dm)+' '+delt(dm)+' kg<\/span><\/div>':'')
+    +(df!=null?'<div class="trow"><span class="tr-l">% grasa<\/span><span class="tr-v '+(parseFloat(df)<0?'up':'dn')+'">'+arr(-parseFloat(df))+' '+delt(df)+'%<\/span><\/div>':'')
+    +(db!=null?'<div class="trow"><span class="tr-l">TMB<\/span><span class="tr-v '+tc(db)+'">'+arr(db)+' '+delt(db,0)+' kcal<\/span><\/div>':'')
+    +'<\/div>'
+    +'<div id="chart-slot"><\/div>'
+    +'<\/div>';
+  html+='<\/div>';
+  html+='<div class="st">Referencias científicas<\/div>';
+  html+='<div style="font-size:7.5px;color:var(--ink-lt);line-height:1.7;column-count:2;column-gap:14px">'
+    +'<strong>Agua corporal<\/strong> [1] Watson PE et al. Am J Clin Nutr. 1980. [2] Chumlea WC et al. Kidney Int. 2001. [14] De Lorenzo A et al. J Appl Physiol. 1997. [15] Kyle UG et al. ESPEN. Clin Nutr. 2004.<br>'
+    +'<strong>Proteína · Masa ósea · % Grasa<\/strong> [3] Heymsfield SB et al. 1997. [4] Tanita Corp. Body Composition Guide. [5] Looker AC et al. 1998. [7] Gallagher D et al. 2000. [8] Li C et al. 2012.<br>'
+    +'<strong>Músculo · Sarcopenia · Grasa visceral<\/strong> [9] Tanita Corp. Manual InnerScan Dual. [12] Janssen I et al. 2000. [13] Cruz-Jentoft AJ et al. EWGSOP2. Age Ageing. 2019. [16] Tanita Europe. Visceral Fat Rating. [17] Despres JP. Nature Rev Cardiol. 2012.'
+    +'<\/div>';
+  html+='<div class="pfooter"><span>SmartBioScan · Reporte de Composición Corporal<\/span><span>'+d.full_name+' · '+d.measurement_date+'<\/span><span>Página 3 de 3<\/span><\/div>';
+  html+='<\/div>';
+  return html;
+}
+
+// ── Chart injection ───────────────────────────────────────────
+function injectChart(d) {
+  var slot = document.getElementById('chart-slot');
+  if (!slot || !d.prev_weight) return;
+  var W=[parseFloat(d.prev_weight),parseFloat(d.weight_kg)];
+  var M=[parseFloat(d.prev_muscle),parseFloat(d.muscle_mass_kg)];
+  var F=[parseFloat(d.prev_fat_pct),parseFloat(d.body_fat_pct)];
+  var pw=360,ph=100,pL=36,pR=8,pT=16,pB=20;
+  var iH=ph-pT-pB;
+  var allWM=W.concat(M);
+  var minWM=Math.min.apply(null,allWM)-2,maxWM=Math.max.apply(null,allWM)+2;
+  function sY(v){return pT+iH-((v-minWM)/(maxWM-minWM))*iH;}
+  function sX(i){return pL+(i/(W.length-1))*(pw-pL-pR);}
+  var minF=Math.min.apply(null,F)-2,maxF=Math.max.apply(null,F)+2;
+  function sYF(v){return pT+iH-((v-minF)/(maxF-minF))*iH;}
+  var g='';
+  [0,.33,.67,1].forEach(function(t){g+='<line x1="'+pL+'" y1="'+(pT+t*iH).toFixed(1)+'" x2="'+(pw-pR)+'" y2="'+(pT+t*iH).toFixed(1)+'" stroke="#e5e7eb" stroke-width="0.5"/>';});
+  var wpArr=W.map(function(v,i){return sX(i).toFixed(1)+','+sY(v).toFixed(1);}).join(' ');
+  var mpArr=M.map(function(v,i){return sX(i).toFixed(1)+','+sY(v).toFixed(1);}).join(' ');
+  var fpArr=F.map(function(v,i){return sX(i).toFixed(1)+','+sYF(v).toFixed(1);}).join(' ');
+  var dots='';
+  W.forEach(function(v,i){dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sY(v).toFixed(1)+'" r="3.5" fill="#0d7377"/><text x="'+sX(i).toFixed(1)+'" y="'+(sY(v)-6).toFixed(1)+'" font-size="7" fill="#0d7377" text-anchor="middle">'+v+'<\/text>';});
+  M.forEach(function(v,i){var a=i?'start':'end';dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sY(v).toFixed(1)+'" r="3.5" fill="#16a34a"/><text x="'+(sX(i)+(i?7:-7)).toFixed(1)+'" y="'+(sY(v)-6).toFixed(1)+'" font-size="7" fill="#16a34a" text-anchor="'+a+'">'+v+'<\/text>';});
+  F.forEach(function(v,i){var a=i?'start':'end';dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sYF(v).toFixed(1)+'" r="2.5" fill="#ea580c"/><text x="'+(sX(i)+(i?5:-5)).toFixed(1)+'" y="'+(sYF(v)+3).toFixed(1)+'" font-size="7" fill="#ea580c" text-anchor="'+a+'">'+v+'%<\/text>';});
+  var xl=[d.trend_from||'Ant.',d.trend_to||'Act.'].map(function(l,i){return '<text x="'+sX(i).toFixed(1)+'" y="'+(ph-4)+'" font-size="8" fill="#9ca3af" text-anchor="middle">'+l+'<\/text>';}).join('');
+  slot.innerHTML='<div style="border:1px solid #d1d5db;border-radius:7px;padding:6px 8px">'
+    +'<div style="font-size:9px;font-weight:600;color:#374151;margin-bottom:3px;display:flex;gap:12px">'
+    +'<span>Evolución<\/span>'
+    +'<span style="color:#0d7377">&#9644; Peso kg<\/span>'
+    +'<span style="color:#16a34a">&#9644; Músculo kg<\/span>'
+    +'<span style="color:#ea580c">- - % Grasa<\/span>'
+    +'<\/div>'
+    +'<svg viewBox="0 0 '+pw+' '+ph+'" style="width:100%;height:auto">'
+    +g
+    +'<polyline points="'+wpArr+'" fill="none" stroke="#0d7377" stroke-width="2" stroke-linejoin="round"/>'
+    +'<polyline points="'+mpArr+'" fill="none" stroke="#16a34a" stroke-width="2" stroke-linejoin="round"/>'
+    +'<polyline points="'+fpArr+'" fill="none" stroke="#ea580c" stroke-width="1.5" stroke-dasharray="3,2" stroke-linejoin="round"/>'
+    +dots+xl
+    +'<\/svg><\/div>';
+}
+
+// ── CSV Parser ────────────────────────────────────────────────
+function parseCSV(text){
+  var lines=text.trim().split('\n');
+  var headers=lines[0].split(',').map(function(h){return h.trim().replace(/^"|"$/g,'');});
+  return lines.slice(1).filter(function(l){return l.trim();}).map(function(line){
+    var vals=line.split(',').map(function(v){return v.trim().replace(/^"|"$/g,'');});
+    var obj={};
+    headers.forEach(function(h,i){obj[h]=vals[i]||'';});
+    return obj;
+  });
+}
+
+// ── Render ────────────────────────────────────────────────────
+function render(d){
+  document.getElementById('patient-label').textContent=d.full_name||'—';
+  document.getElementById('report-area').innerHTML=page1(d)+page2(d)+page3(d);
+  injectChart(d);
+}
+
+// ── CSV upload ────────────────────────────────────────────────
+document.getElementById('csv-input').addEventListener('change',function(e){
+  var file=e.target.files[0];
+  if(!file) return;
+  var reader=new FileReader();
+  reader.onload=function(ev){
+    try{
+      var rows=parseCSV(ev.target.result);
+      if(!rows.length){alert('CSV vacío o mal formateado');return;}
+      render(rows[0]);
+    }catch(err){alert('Error al procesar CSV: '+err.message);}
+  };
+  reader.readAsText(file);
+});
+
+// ── Init ──────────────────────────────────────────────────────
+render(DEMO);
+</script>
+</body>
+</html>

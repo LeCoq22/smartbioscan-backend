@@ -179,12 +179,8 @@ def svg_imme_bar(imme, sarco_thresh, normal_thresh, patient_name="", scale_max=2
 
 def seg_muscle_row(name, kg, ideal_kg, quality, q_range, show_quality=True):
     """Fila segmental de músculo. show_quality=False para tronco (Tanita no mide MQ)."""
-    pct_ideal = round(kg / ideal_kg * 100) if ideal_kg > 0 else 0
-    fill_pct  = _clamp(pct_ideal / 140, 0, 1) * 100  # escala 0-140%
-
-    # Zona normal en barra cantidad: 80-120% del ideal (57%-86% del contenedor a escala 0-140%)
-    norm_l_kg = 80 / 140 * 100
-    norm_w_kg = 40 / 140 * 100
+    ref_low  = round(ideal_kg * 0.8, 1) if ideal_kg > 0 else 0
+    ref_high = round(ideal_kg * 1.2, 1) if ideal_kg > 0 else 0
 
     if show_quality:
         q_lo, q_hi = q_range
@@ -194,35 +190,23 @@ def seg_muscle_row(name, kg, ideal_kg, quality, q_range, show_quality=True):
             q_cat, q_color = "Bajo", "#c0392b"
         else:
             q_cat, q_color = "Normal", "#2980b9"
-
-        q_fill   = _clamp(quality / 100, 0, 1) * 100
-        q_norm_l = q_lo / 100 * 100
-        q_norm_w = (q_hi - q_lo) / 100 * 100
-
-        quality_bar = f"""
-    <div class="seg-bar-outer" style="margin-top:2px">
-      <div style="position:absolute;top:0;bottom:0;left:{q_norm_l:.1f}%;width:{q_norm_w:.1f}%;background:rgba(142,68,173,0.15)"></div>
-      <div class="seg-bar" style="width:{q_fill:.1f}%;background:#8e44ad"></div>
-    </div>"""
-        cat_cell = f'<div class="seg-cat" style="color:{q_color}">{q_cat}</div>'
-        det_extra = f'<br><span style="color:{q_color}">score {int(quality)} ({q_lo}–{q_hi})</span>'
+        score_cell = f'<div style="font-size:10px;font-weight:500;text-align:right">{int(quality)}</div>'
+        cat_cell   = f'<div style="font-size:9px;text-align:center;color:{q_color}">{q_cat}</div>'
+        ref_cell   = f'<div class="seg-det">score ({q_lo}–{q_hi})</div>'
     else:
-        quality_bar = ""
-        cat_cell    = '<div class="seg-cat" style="color:#9c9a92">—</div>'
-        det_extra   = ""
+        score_cell = '<div style="font-size:9px;text-align:right;color:#9c9a92">—</div>'
+        cat_cell   = '<div style="font-size:9px;text-align:center;color:#9c9a92">—</div>'
+        ref_cell   = '<div class="seg-det" style="color:#9c9a92">sin dato</div>'
 
-    return f"""<div class="seg-row">
+    range_text = f'{ref_low}–{ref_high} kg' if ideal_kg > 0 else '—'
+
+    return f"""<div style="display:grid;grid-template-columns:75px 55px 70px 42px 55px 1fr;gap:3px;align-items:center;margin-bottom:4px">
   <div class="seg-name">{name}</div>
-  <div>
-    <div class="seg-bar-outer">
-      <div style="position:absolute;top:0;bottom:0;left:{norm_l_kg:.1f}%;width:{norm_w_kg:.1f}%;background:rgba(41,128,185,0.15)"></div>
-      <div style="position:absolute;top:0;bottom:0;left:50%;width:1px;background:rgba(0,0,0,0.2)"></div>
-      <div class="seg-bar" style="width:{fill_pct:.1f}%;background:#2980b9"></div>
-    </div>{quality_bar}
-  </div>
-  <div class="seg-pct" style="color:#2980b9">{pct_ideal}%</div>
+  <div style="font-size:10px;font-weight:500">{kg} kg</div>
+  <div style="font-size:9px;color:#5c5b55">{range_text}</div>
+  {score_cell}
   {cat_cell}
-  <div class="seg-det">{kg} kg<br><span style="color:#9c9a92">ref. {round(ideal_kg*0.8,1)}–{round(ideal_kg*1.2,1)} kg</span>{det_extra}</div>
+  {ref_cell}
 </div>"""
 
 
@@ -295,29 +279,16 @@ def physique_svg(n: int, svg_w=52, svg_h=90) -> str:
 
 def seg_fat_row(name, fat_pct, ref_low, ref_high, ideal):
     """Fila segmental de grasa."""
-    level = round(fat_pct / ideal * 100) if ideal > 0 else 0
-
     if fat_pct < ref_low:
         cat, cat_c = "↓ Atlética", "#27ae60"
     elif fat_pct > ref_high:
         cat, cat_c = "Alto", "#c0392b"
     else:
-        cat, cat_c = "↓ Normal", "#2980b9"
+        cat, cat_c = "Normal", "#2980b9"
 
-    fill_pct = _clamp(level / 140, 0, 1) * 100
-    norm_l = _clamp(ref_low / ideal / 1.4, 0, 1) * 100
-    norm_w = _clamp((ref_high - ref_low) / ideal / 1.4, 0, 1) * 100
-
-    return f"""<div class="seg-row">
+    return f"""<div style="display:grid;grid-template-columns:75px 48px 70px 1fr;gap:3px;align-items:center;margin-bottom:4px">
   <div class="seg-name">{name}</div>
-  <div>
-    <div class="seg-bar-outer">
-      <div style="position:absolute;top:0;bottom:0;left:{norm_l:.1f}%;width:{norm_w:.1f}%;background:rgba(231,76,60,0.15)"></div>
-      <div style="position:absolute;top:0;bottom:0;left:50%;width:1px;background:rgba(0,0,0,0.2)"></div>
-      <div class="seg-bar" style="width:{fill_pct:.1f}%;background:#e67e22;opacity:0.85"></div>
-    </div>
-  </div>
-  <div class="seg-pct"><span style="color:{cat_c}">{level}%</span><br><span style="font-size:9px;color:#c0392b">{fat_pct}%</span></div>
+  <div class="seg-pct">{fat_pct}%</div>
   <div class="seg-cat" style="color:{cat_c}">{cat}</div>
   <div class="seg-det">ref {ref_low}–{ref_high}%<br>ideal {ideal}%</div>
 </div>"""
