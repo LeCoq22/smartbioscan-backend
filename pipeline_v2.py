@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from analysis_engine import PatientInfo, analyze
 from csv_parser import load_csv
-from pdf_generator_pdfkit import generate_html
+from pdf_generator_v2 import generate_html_v2 as generate_html
 
 
 # ─────────────────────────────────────────────
@@ -228,6 +228,7 @@ async def run_pipeline(
     patient_id: str = None,
     nutri_id: str = None,
     use_db: bool = True,
+    measurement_date: str = None,  # YYYY-MM-DD; si se da, genera reporte para esa fecha
 ) -> dict:
     """
     Pipeline completo. Retorna dict con resultado y metadatos.
@@ -341,12 +342,21 @@ async def run_pipeline(
     print(f"[Pipeline] {len(measurements)} mediciones "
           f"({measurements[0].date[:10]} → {measurements[-1].date[:10]})")
 
-    # Dedup: no generar si ya existe un reporte para esta medición
+    # Si se pide una fecha específica, filtramos hasta esa fecha
+    target_date = measurement_date[:10] if measurement_date else None
+    if target_date:
+        measurements = [m for m in measurements if m.date[:10] <= target_date]
+        if not measurements:
+            result['error'] = f'no_measurement_for_date:{target_date}'
+            return result
+        print(f"[Pipeline] Filtrado a fecha {target_date} → {len(measurements)} mediciones")
+
+    # Dedup: no generar si ya existe un reporte para esta medición exacta
+    check_date = target_date or measurements[-1].date[:10]
     if db and patient_id:
         last_date = db.get_last_measurement_date(patient_id)
-        latest_csv_date = measurements[-1].date[:10]
-        if last_date and last_date[:10] == latest_csv_date:
-            print(f"[Pipeline] ~ Sin datos nuevos (última medición: {latest_csv_date}) — skip")
+        if last_date and last_date[:10] == check_date:
+            print(f"[Pipeline] ~ Ya existe reporte para {check_date} — skip")
             result['ok'] = True
             result['skipped'] = True
             return result

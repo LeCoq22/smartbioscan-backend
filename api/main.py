@@ -78,6 +78,7 @@ async def get_current_nutri(x_nutri_id: str = Header(..., alias="X-Nutri-Id")):
 
 class GenerateReportRequest(BaseModel):
     patient_id: str
+    measurement_date: Optional[str] = None  # YYYY-MM-DD; si None → usa la más reciente
     output_path: Optional[str] = None  # solo para debugging local
 
 class GenerateReportResponse(BaseModel):
@@ -158,12 +159,13 @@ async def generate_report(
     t0 = time.time()
     try:
         result = await run_pipeline(
-            email       = '',     # pipeline los obtiene de Supabase via patient_id
-            password    = '',
-            patient_id  = body.patient_id,
-            nutri_id    = nutri_id,
-            output_path = body.output_path,
-            use_db      = True,
+            email            = '',     # pipeline los obtiene de Supabase via patient_id
+            password         = '',
+            patient_id       = body.patient_id,
+            nutri_id         = nutri_id,
+            output_path      = body.output_path,
+            measurement_date = body.measurement_date,
+            use_db           = True,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
