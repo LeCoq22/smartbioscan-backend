@@ -362,12 +362,18 @@ def parse_tanita_csv(csv_content: str) -> pd.DataFrame:
 
 def csv_row_to_dict(row: pd.Series, cols: list[str]) -> dict:
     """Convierte una fila del DataFrame en dict para guardar en patient_csvs.raw_data."""
+    import math
+
     def _get(*candidates):
         for c in candidates:
             if c in cols:
                 v = row.get(c)
                 try:
-                    return float(v) if v is not None else None
+                    f = float(v) if v is not None else None
+                    # NaN / Inf no son JSON-compliant → None
+                    if f is not None and (math.isnan(f) or math.isinf(f)):
+                        return None
+                    return f
                 except Exception:
                     return None
         return None
