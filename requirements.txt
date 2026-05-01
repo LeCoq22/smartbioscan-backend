@@ -8,3 +8,6 @@ cryptography
 playwright
 httpx
 python-multipart
+pandas
+matplotlib
+python-pdfkit
