@@ -42,9 +42,16 @@ app = FastAPI(
 
 app.include_router(payments_router)
 
+_frontend_url = os.getenv("FRONTEND_URL", "")
+_allowed_origins = [o for o in [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    _frontend_url,
+] if o]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:5174"],  # Vite dev
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -87,11 +94,16 @@ class CreatePatientRequest(BaseModel):
     tanita_email: EmailStr
     tanita_password: str
     phone_whatsapp: Optional[str] = None
+    mytanita_profile_id: Optional[str] = None
 
 class CreatePatientResponse(BaseModel):
     ok: bool
     patient_id: Optional[str] = None
     error: Optional[str] = None
+
+class ProfileInfo(BaseModel):
+    profile_id: Optional[str] = None
+    profile_name: str
 
 class VerifyCredentialsRequest(BaseModel):
     tanita_email: EmailStr
@@ -99,6 +111,7 @@ class VerifyCredentialsRequest(BaseModel):
 
 class VerifyCredentialsResponse(BaseModel):
     ok: bool
+    profiles: Optional[list[ProfileInfo]] = None
     error: Optional[str] = None
 
 class RegisterNutriRequest(BaseModel):
@@ -216,14 +229,18 @@ async def create_patient(
         from db import DB
         db = DB()
         patient = db.create_patient(nutri_id, {
-            'full_name':      body.full_name,
-            'phone_whatsapp': body.phone_whatsapp,
+            'full_name':           body.full_name,
+            'phone_whatsapp':      body.phone_whatsapp,
+            'mytanita_profile_id': body.mytanita_profile_id,
         })
         db.upsert_tanita_credentials(patient['id'], body.tanita_email, body.tanita_password)
         return CreatePatientResponse(ok=True, patient_id=patient['id'])
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
+        err_str = str(e).lower()
+        if 'unique' in err_str or 'duplicate' in err_str or '23505' in err_str:
+            raise HTTPException(status_code=409, detail="Ya existe un paciente con estas credenciales.")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -264,11 +281,102 @@ async def verify_credentials(
     nutri_id: str = Depends(get_current_nutri),
 ):
     """
-    Verifica credenciales MyTanita haciendo login real sin scraping.
+    Verifica credenciales MyTanita y devuelve la lista de perfiles de la cuenta.
     """
-    from tanita_scraper import verify_login
-    result = await verify_login(body.tanita_email, body.tanita_password)
-    return VerifyCredentialsResponse(ok=result["ok"], error=result.get("error"))
+    from tanita_scraper import verify_and_list_profiles
+    result = await verify_and_list_profiles(body.tanita_email, body.tanita_password)
+    return VerifyCredentialsResponse(
+        ok=result["ok"],
+        profiles=result.get("profiles"),
+        error=result.get("error"),
+    )
+
+
+@app.post("/patients/{patient_id}/sync-csvs")
+async def sync_patient_csvs(
+    patient_id: str,
+    nutri_id: str = Depends(get_current_nutri),
+):
+    """
+    Scrapes MyTanita and upserts all measurements into patient_csvs.
+    Triggered by the "Actualizar" button on the patient reports screen.
+    """
+    from db import DB
+    from tanita_scraper import scrape_profile_csv, extract_all_measurements
+
+    db = DB()
+    patient = db.get_patient(patient_id)
+    if not patient or patient['nutri_id'] != nutri_id:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+    creds = db.get_tanita_credentials(patient_id)
+    if not creds:
+        raise HTTPException(status_code=404, detail="Sin credenciales configuradas")
+
+    result = await scrape_profile_csv(
+        creds['tanita_email'],
+        creds['tanita_password'],
+        patient.get('mytanita_profile_id'),
+    )
+
+    if not result.get('success'):
+        error = result.get('error', 'unknown')
+        db.update_scrape_status(patient_id, 'login_failed' if 'login' in error else 'timeout', error)
+        if error == 'login_failed':
+            raise HTTPException(status_code=422, detail="Credenciales MyTanita inválidas")
+        raise HTTPException(status_code=500, detail=error)
+
+    meas_list = extract_all_measurements(result['dataframe'])
+    count = db.upsert_patient_csvs(patient_id, nutri_id, meas_list)
+    db.update_scrape_status(patient_id, 'ok')
+
+    latest = result.get('latest') or {}
+    return {
+        "ok": True,
+        "synced": count,
+        "latest_date": latest.get('date'),
+    }
+
+
+@app.get("/patients/{patient_id}/csvs")
+async def get_patient_csvs(
+    patient_id: str,
+    nutri_id: str = Depends(get_current_nutri),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """
+    Devuelve las mediciones almacenadas en patient_csvs para un paciente.
+    """
+    from db import DB
+    db = DB()
+    patient = db.get_patient(patient_id)
+    if not patient or patient['nutri_id'] != nutri_id:
+        raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+    rows = db.get_patient_csvs(patient_id, limit=limit)
+    return {"ok": True, "measurements": rows}
+
+
+@app.delete("/patients/{patient_id}")
+async def delete_patient(
+    patient_id: str,
+    nutri_id: str = Depends(get_current_nutri),
+):
+    """
+    Soft delete de un paciente: copia paciente + reportes a shadow tables
+    y borra los registros originales (transacción atómica vía RPC Postgres).
+    Requiere ejecutar migrations/001_shadow_tables.sql en Supabase primero.
+    """
+    try:
+        from db import DB
+        db = DB()
+        result = db.soft_delete_patient(patient_id, nutri_id)
+        return {"ok": True, **result}
+    except Exception as e:
+        err_str = str(e)
+        if 'no encontrado' in err_str.lower() or 'not found' in err_str.lower():
+            raise HTTPException(status_code=404, detail="Paciente no encontrado")
+        raise HTTPException(status_code=500, detail=err_str)
 
 
 @app.post("/auth/register", response_model=RegisterNutriResponse)

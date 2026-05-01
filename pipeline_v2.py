@@ -100,15 +100,14 @@ def parse_settings(raw: dict) -> dict:
             'dob': dob_str}
 
 
-async def do_scrape(email: str, password: str, skip_settings: bool = False) -> dict:
+async def do_scrape(email: str, password: str, skip_settings: bool = False,
+                    profile_id: str | None = None) -> dict:
     """
-    Hace login, extrae settings y descarga el CSV.
-    Retorna dict con: patient_data, csv_path, csv_content, error
+    Login, switch to patient's profile if profile_id given, extract settings, download CSV.
+    Returns: {error, patient_data, csv_path, csv_content}
     """
     from playwright.async_api import async_playwright, TimeoutError as PWTimeout
-
-    LOGIN_URL = "https://mytanita.eu/en/login"
-    MEAS_URL  = "https://mytanita.eu/en/user/measurements"
+    from tanita_scraper import _do_login, _download_csv_for_profile
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -127,54 +126,36 @@ async def do_scrape(email: str, password: str, skip_settings: bool = False) -> d
         page = await context.new_page()
 
         try:
-            print(f"[Scraper] Login...")
-            await page.goto(LOGIN_URL, wait_until="networkidle", timeout=30_000)
-            await page.fill('input[name="mail"]', email, timeout=10_000)
-            try:
-                await page.fill('input[type="password"]', password, timeout=5_000)
-            except:
-                pass
-            await page.keyboard.press("Enter")
-            await page.wait_for_load_state("networkidle", timeout=20_000)
-
-            if "login" in page.url.lower():
-                try:
-                    await page.fill('input[type="password"]', password, timeout=8_000)
-                    await page.keyboard.press("Enter")
-                    await page.wait_for_load_state("networkidle", timeout=20_000)
-                except:
-                    pass
-
-            if "login" in page.url.lower():
+            print("[Scraper] Login...")
+            ok = await _do_login(page, email, password)
+            if not ok:
                 return {'error': 'login_failed', 'patient_data': None,
                         'csv_path': None, 'csv_content': None}
-
             print("[Scraper] ✓ Login OK")
 
-            # Settings — saltar si ya están en BD
+            # Switch to patient's profile (multi-profile accounts)
+            if profile_id:
+                print(f"[Scraper] Cambiando a perfil {profile_id}...")
+                await page.goto(
+                    f"https://mytanita.eu/en/user/change-user-profile/{profile_id}",
+                    wait_until="networkidle", timeout=15_000
+                )
+
+            # Settings — skip if already in DB
             if skip_settings:
                 print("[Scraper] Settings en BD — skip")
-                patient_data = {'name':'', 'age':0, 'sex':'F', 'height_cm':170, 'dob':''}
+                patient_data = {'name': '', 'age': 0, 'sex': 'F', 'height_cm': 170, 'dob': ''}
             else:
                 raw_settings = await scrape_settings(page)
                 patient_data = parse_settings(raw_settings)
 
-            # CSV
+            # CSV (profile already active — pass None to avoid double-switch)
             print("[Scraper] Descargando CSV...")
-            await page.goto(MEAS_URL, wait_until="networkidle", timeout=20_000)
-            await page.click('#importExport', timeout=10_000)
-            await page.wait_for_selector(
-                'a[href="/en/user/export-csv"]', state="visible", timeout=8_000
-            )
-            async with page.expect_download(timeout=20_000) as dl_info:
-                await page.click('a[href="/en/user/export-csv"]')
+            csv_content = await _download_csv_for_profile(page, None, email)
 
-            download = await dl_info.value
-            tmp_csv = f"/tmp/tanita_{email.replace('@','_').replace('.','_')}.csv"
-            await download.save_as(tmp_csv)
-
-            with open(tmp_csv, 'r', encoding='utf-8') as f:
-                csv_content = f.read()
+            tmp_csv = f"/tmp/tanita_{email.replace('@', '_').replace('.', '_')}.csv"
+            with open(tmp_csv, 'w', encoding='utf-8') as f:
+                f.write(csv_content)
 
             print(f"[Scraper] ✓ CSV descargado ({len(csv_content)} bytes)")
             return {
@@ -195,7 +176,7 @@ async def do_scrape(email: str, password: str, skip_settings: bool = False) -> d
                 await page.goto("https://mytanita.eu/en/logout",
                                 wait_until="networkidle", timeout=8_000)
                 print("[Scraper] ✓ Logout OK")
-            except:
+            except Exception:
                 print("[Scraper] ~ Logout falló (no crítico)")
             await context.close()
             await browser.close()
@@ -278,6 +259,7 @@ async def run_pipeline(
 
     # ── Obtener credenciales y datos desde BD si hay patient_id ──
     settings_in_db = False
+    profile_id = None
     if db and patient_id:
         creds = db.get_tanita_credentials(patient_id)
         if not creds:
@@ -289,8 +271,9 @@ async def run_pipeline(
 
         patient_row = db.get_patient(patient_id)
         if patient_row:
-            nutri_id = nutri_id or patient_row['nutri_id']
-            doctor   = doctor or _get_nutri_name(db, nutri_id)
+            nutri_id   = nutri_id or patient_row['nutri_id']
+            doctor     = doctor or _get_nutri_name(db, nutri_id)
+            profile_id = patient_row.get('mytanita_profile_id')
             # Si ya tenemos datos completos en BD, los usamos
             # y saltamos el scrape de settings (~3s menos por reporte)
             if db.patient_has_settings(patient_id):
@@ -302,8 +285,9 @@ async def run_pipeline(
                 print(f"[Pipeline] Datos del paciente desde BD (sin re-scrapear settings)")
 
     # ── Scraping ──────────────────────────────
-    # skip_settings=True si ya tenemos los datos en BD
-    scrape = await do_scrape(email, password, skip_settings=settings_in_db)
+    scrape = await do_scrape(email, password,
+                             skip_settings=settings_in_db,
+                             profile_id=profile_id)
 
     if scrape['error']:
         print(f"[Pipeline] ✗ Scraping fallido: {scrape['error']}")
@@ -328,6 +312,17 @@ async def run_pipeline(
                 print("[Pipeline] ✓ Settings guardados en BD")
             except Exception as e:
                 print(f"[Pipeline] ~ No se pudieron guardar settings: {e}")
+
+        # Upsert ALL measurements into patient_csvs for the reports screen
+        if nutri_id:
+            try:
+                from tanita_scraper import parse_tanita_csv, extract_all_measurements
+                df = parse_tanita_csv(scrape['csv_content'])
+                meas_list = extract_all_measurements(df)
+                count = db.upsert_patient_csvs(patient_id, nutri_id, meas_list)
+                print(f"[Pipeline] ✓ {count} mediciones sincronizadas en patient_csvs")
+            except Exception as e:
+                print(f"[Pipeline] ~ No se pudo sincronizar patient_csvs: {e}")
 
     # ── Datos del paciente ────────────────────
     pd = scrape['patient_data']
@@ -417,6 +412,14 @@ async def run_pipeline(
             )
             result['report_id'] = report['id']
             print(f"[Pipeline] ✓ Reporte registrado: {report['id']}")
+
+            # Link report to the patient_csvs row
+            try:
+                db.mark_csv_report_generated(
+                    patient_id, latest.date[:10], report['id']
+                )
+            except Exception:
+                pass
 
         except Exception as e:
             print(f"[Pipeline] ~ Error Supabase (PDF generado igual): {e}")

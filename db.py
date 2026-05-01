@@ -254,6 +254,34 @@ class DB:
         )
         return path
 
+    def soft_delete_patient(self, patient_id: str, deleted_by: str) -> dict:
+        """
+        Soft delete atómico vía RPC Postgres.
+        Requiere migration 001_shadow_tables.sql aplicada en Supabase.
+        """
+        res = self.client.rpc('soft_delete_patient', {
+            'p_patient_id': patient_id,
+            'p_deleted_by':  deleted_by,
+        }).execute()
+        return res.data or {}
+
+    def update_patient(self, patient_id: str, data: dict) -> dict:
+        """Actualiza campos editables de un paciente."""
+        allowed = {'full_name', 'sex', 'height_cm', 'date_of_birth', 'phone_whatsapp'}
+        payload = {k: v for k, v in data.items() if k in allowed}
+        res = (self.client.table('patients')
+               .update(payload)
+               .eq('id', patient_id)
+               .execute())
+        return res.data[0] if res.data else {}
+
+    def count_reports_for_patient(self, patient_id: str) -> int:
+        res = (self.client.table('reports')
+               .select('id', count='exact')
+               .eq('patient_id', patient_id)
+               .execute())
+        return res.count or 0
+
     def get_pdf_url(self, storage_path: str, expires_in: int = 3600) -> str:
         """Genera una URL firmada temporal para descargar el PDF."""
         res = self.client.storage.from_('reports').create_signed_url(
@@ -331,6 +359,50 @@ class DB:
                .eq('id', patient_id)
                .execute())
         return res.data[0] if res.data else {}
+
+    # ── Patient CSVs ──────────────────────────────────────────────────────────
+
+    def upsert_patient_csvs(self, patient_id: str, nutri_id: str,
+                             measurements: list) -> int:
+        """
+        Upsert de mediciones en patient_csvs (una fila por fecha).
+        measurements: lista de dicts de csv_row_to_dict (con campo 'date').
+        Retorna el número de filas procesadas.
+        """
+        rows = []
+        for m in measurements:
+            if not m.get('date'):
+                continue
+            rows.append({
+                'patient_id':       patient_id,
+                'nutri_id':         nutri_id,
+                'measurement_date': m['date'],
+                'raw_data':         {k: v for k, v in m.items() if k != 'date' and v is not None},
+            })
+        if not rows:
+            return 0
+        self.client.table('patient_csvs').upsert(
+            rows, on_conflict='patient_id,measurement_date'
+        ).execute()
+        return len(rows)
+
+    def get_patient_csvs(self, patient_id: str, limit: int = 50) -> list:
+        """Retorna las mediciones del paciente ordenadas por fecha desc."""
+        res = (self.client.table('patient_csvs')
+               .select('*')
+               .eq('patient_id', patient_id)
+               .order('measurement_date', desc=True)
+               .limit(limit)
+               .execute())
+        return res.data
+
+    def mark_csv_report_generated(self, patient_id: str,
+                                   measurement_date: str, report_id: str):
+        """Marca una medición como con reporte PDF generado."""
+        self.client.table('patient_csvs').update({
+            'report_generated': True,
+            'report_id':        report_id,
+        }).eq('patient_id', patient_id).eq('measurement_date', measurement_date).execute()
 
     def patient_has_settings(self, patient_id: str) -> bool:
         """
