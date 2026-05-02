@@ -506,7 +506,11 @@ function injectChart(d) {
   var allWM=W.concat(M);
   var minWM=Math.min.apply(null,allWM)-2,maxWM=Math.max.apply(null,allWM)+2;
   function sY(v){return pT+iH-((v-minWM)/(maxWM-minWM))*iH;}
-  function sX(i){return pL+(i/(W.length-1))*(pw-pL-pR);}
+  var tArr=labels.map(function(l){var d=new Date(l);return isNaN(d.getTime())?null:d.getTime();});
+  var useTime=tArr.every(function(t){return t!==null;})&&tArr[tArr.length-1]>tArr[0];
+  if(!useTime){tArr=labels.map(function(_,i){return i;});}
+  var tMin=tArr[0],tMax=tArr[tArr.length-1],tRng=tMax>tMin?tMax-tMin:1;
+  function sX(i){return pL+((tArr[i]-tMin)/tRng)*(pw-pL-pR);}
   var minF=Math.min.apply(null,F)-2,maxF=Math.max.apply(null,F)+2;
   function sYF(v){return pT+iH-((v-minF)/(maxF-minF))*iH;}
   var g='';
@@ -530,9 +534,11 @@ function injectChart(d) {
   });
   F.forEach(function(v,i){
     var showLbl=!manyPts||i===0||i===F.length-1;
-    var a=i?'start':'end';
+    var isLast=i===F.length-1;
+    var a=(i===0||isLast)?'end':'start';
+    var xOff=(i===0||isLast)?-5:5;
     dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sYF(v).toFixed(1)+'" r="'+(manyPts?1.5:2.5)+'" fill="#ea580c"\/>';
-    if(showLbl)dots+='<text x="'+(sX(i)+(i?5:-5)).toFixed(1)+'" y="'+(sYF(v)+3).toFixed(1)+'" font-size="7" fill="#ea580c" text-anchor="'+a+'">'+v+'%<\/text>';
+    if(showLbl)dots+='<text x="'+(sX(i)+xOff).toFixed(1)+'" y="'+(sYF(v)+3).toFixed(1)+'" font-size="7" fill="#ea580c" text-anchor="'+a+'">'+v+'%<\/text>';
   });
   // Eje X: tick por cada medición, rotado -45° con text-anchor="end"
   var xl=labels.map(function(l,i){
@@ -541,11 +547,11 @@ function injectChart(d) {
       +' transform="rotate(-45,'+x+','+y+')">'+l+'<\/text>';
   }).join('');
   slot.innerHTML='<div style="border:1px solid #d1d5db;border-radius:7px;padding:6px 8px">'
-    +'<div style="font-size:10.5px;font-weight:600;color:#374151;margin-bottom:3px;display:flex;gap:10px;align-items:center">'
+    +'<div style="font-size:9px;font-weight:600;color:#374151;margin-bottom:3px;display:flex;gap:8px;align-items:center">'
     +'<span>Evolución<\/span>'
-    +'<span style="color:#0d7377;font-size:10px">&#9644; Peso kg<\/span>'
-    +'<span style="color:#16a34a;font-size:10px">&#9644; Músculo kg<\/span>'
-    +'<span style="color:#ea580c;font-size:10px">- - % Grasa<\/span>'
+    +'<span style="color:#0d7377;font-size:9px">&#9644; Peso kg<\/span>'
+    +'<span style="color:#16a34a;font-size:9px">&#9644; Músculo kg<\/span>'
+    +'<span style="color:#ea580c;font-size:9px">- - % Grasa<\/span>'
     +'<\/div>'
     +'<svg viewBox="0 0 '+pw+' '+ph+'" style="width:100%;height:auto">'
     +g
