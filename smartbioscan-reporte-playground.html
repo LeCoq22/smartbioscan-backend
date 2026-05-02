@@ -500,7 +500,7 @@ function injectChart(d) {
   var F=hs?hs.map(function(h){return parseFloat(h.fat_pct);}):
            [parseFloat(d.prev_fat_pct),parseFloat(d.body_fat_pct)];
   var labels=hs?hs.map(function(h){return h.date;}):[d.trend_from||'Ant.',d.trend_to||'Act.'];
-  var pw=360,ph=100,pL=36,pR=8,pT=16,pB=34;
+  var pw=360,ph=140,pL=36,pR=22,pT=16,pB=34;
   var iH=ph-pT-pB;
   var allWM=W.concat(M);
   var minWM=Math.min.apply(null,allWM)-2,maxWM=Math.max.apply(null,allWM)+2;
@@ -540,11 +540,11 @@ function injectChart(d) {
       +' transform="rotate(-45,'+x+','+y+')">'+l+'<\/text>';
   }).join('');
   slot.innerHTML='<div style="border:1px solid #d1d5db;border-radius:7px;padding:6px 8px">'
-    +'<div style="font-size:9px;font-weight:600;color:#374151;margin-bottom:3px;display:flex;gap:12px">'
+    +'<div style="font-size:10.5px;font-weight:600;color:#374151;margin-bottom:3px;display:flex;gap:10px;align-items:center">'
     +'<span>Evolución<\/span>'
-    +'<span style="color:#0d7377">&#9644; Peso kg<\/span>'
-    +'<span style="color:#16a34a">&#9644; Músculo kg<\/span>'
-    +'<span style="color:#ea580c">- - % Grasa<\/span>'
+    +'<span style="color:#0d7377;font-size:10px">&#9644; Peso kg<\/span>'
+    +'<span style="color:#16a34a;font-size:10px">&#9644; Músculo kg<\/span>'
+    +'<span style="color:#ea580c;font-size:10px">- - % Grasa<\/span>'
     +'<\/div>'
     +'<svg viewBox="0 0 '+pw+' '+ph+'" style="width:100%;height:auto">'
     +g
