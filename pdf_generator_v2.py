@@ -121,8 +121,8 @@ def _build_data(analysis: dict, doctor_name: str = '') -> dict:
         'ecw_icw_ratio':      act['ratio'],
         # Evolution — serie completa para el gráfico (N puntos)
         'history_series': [
-            {'date': _fmt_chart_date(s['date']), 'weight_kg': s['weight_kg'],
-             'muscle_kg': s['muscle_kg'], 'fat_pct': s['fat_pct']}
+            {'date': s['date'][:10], 'label': _fmt_chart_date(s['date']),
+             'weight_kg': s['weight_kg'], 'muscle_kg': s['muscle_kg'], 'fat_pct': s['fat_pct']}
             for s in series
         ] if series else None,
         # Mantener prev_* para el bloque "Tendencia" (texto, no gráfico)

@@ -500,13 +500,14 @@ function injectChart(d) {
            [parseFloat(d.prev_muscle),parseFloat(d.muscle_mass_kg)];
   var F=hs?hs.map(function(h){return parseFloat(h.fat_pct);}):
            [parseFloat(d.prev_fat_pct),parseFloat(d.body_fat_pct)];
-  var labels=hs?hs.map(function(h){return h.date;}):[d.trend_from||'Ant.',d.trend_to||'Act.'];
+  var labels=hs?hs.map(function(h){return h.label||h.date;}):[d.trend_from||'Ant.',d.trend_to||'Act.'];
   var pw=360,ph=140,pL=36,pR=22,pT=16,pB=34;
   var iH=ph-pT-pB;
   var allWM=W.concat(M);
   var minWM=Math.min.apply(null,allWM)-2,maxWM=Math.max.apply(null,allWM)+2;
   function sY(v){return pT+iH-((v-minWM)/(maxWM-minWM))*iH;}
-  var tArr=labels.map(function(l){var d=new Date(l);return isNaN(d.getTime())?null:d.getTime();});
+  var dArr=hs?hs.map(function(h){return h.date;}):labels;
+  var tArr=dArr.map(function(l){var d=new Date(l);return isNaN(d.getTime())?null:d.getTime();});
   var useTime=tArr.every(function(t){return t!==null;})&&tArr[tArr.length-1]>tArr[0];
   if(!useTime){tArr=labels.map(function(_,i){return i;});}
   var tMin=tArr[0],tMax=tArr[tArr.length-1],tRng=tMax>tMin?tMax-tMin:1;
@@ -547,11 +548,11 @@ function injectChart(d) {
       +' transform="rotate(-45,'+x+','+y+')">'+l+'<\/text>';
   }).join('');
   slot.innerHTML='<div style="border:1px solid #d1d5db;border-radius:7px;padding:6px 8px">'
-    +'<div style="font-size:9px;font-weight:600;color:#374151;margin-bottom:3px;display:flex;gap:8px;align-items:center">'
+    +'<div style="font-size:10px;font-weight:600;color:#374151;margin-bottom:3px;display:flex;gap:8px;align-items:center">'
     +'<span>Evolución<\/span>'
-    +'<span style="color:#0d7377;font-size:9px">&#9644; Peso kg<\/span>'
-    +'<span style="color:#16a34a;font-size:9px">&#9644; Músculo kg<\/span>'
-    +'<span style="color:#ea580c;font-size:9px">- - % Grasa<\/span>'
+    +'<span style="color:#0d7377;font-size:10px">&#9644; Peso kg<\/span>'
+    +'<span style="color:#16a34a;font-size:10px">&#9644; Músculo kg<\/span>'
+    +'<span style="color:#ea580c;font-size:10px">- - % Grasa<\/span>'
     +'<\/div>'
     +'<svg viewBox="0 0 '+pw+' '+ph+'" style="width:100%;height:auto">'
     +g
