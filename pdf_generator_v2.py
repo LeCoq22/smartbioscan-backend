@@ -107,7 +107,13 @@ def _build_data(analysis: dict, doctor_name: str = '') -> dict:
         'ecw_l':              act['aec_l'],
         'icw_l':              act['aic_l'],
         'ecw_icw_ratio':      act['ratio'],
-        # Evolution (first vs latest)
+        # Evolution — serie completa para el gráfico (N puntos)
+        'history_series': [
+            {'date': s['date'][:7], 'weight_kg': s['weight_kg'],
+             'muscle_kg': s['muscle_kg'], 'fat_pct': s['fat_pct']}
+            for s in series
+        ] if series else None,
+        # Mantener prev_* para el bloque "Tendencia" (texto, no gráfico)
         'prev_weight':        series[0]['weight_kg'] if has_prev else None,
         'prev_muscle':        series[0]['muscle_kg']  if has_prev else None,
         'prev_fat_pct':       series[0]['fat_pct']    if has_prev else None,

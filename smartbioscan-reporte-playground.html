@@ -491,9 +491,15 @@ function page3(d){
 function injectChart(d) {
   var slot = document.getElementById('chart-slot');
   if (!slot || !d.prev_weight) return;
-  var W=[parseFloat(d.prev_weight),parseFloat(d.weight_kg)];
-  var M=[parseFloat(d.prev_muscle),parseFloat(d.muscle_mass_kg)];
-  var F=[parseFloat(d.prev_fat_pct),parseFloat(d.body_fat_pct)];
+  // Usar history_series (N puntos) si está disponible; si no, fallback 2 puntos
+  var hs=d.history_series&&d.history_series.length>1?d.history_series:null;
+  var W=hs?hs.map(function(h){return parseFloat(h.weight_kg);}):
+           [parseFloat(d.prev_weight),parseFloat(d.weight_kg)];
+  var M=hs?hs.map(function(h){return parseFloat(h.muscle_kg);}):
+           [parseFloat(d.prev_muscle),parseFloat(d.muscle_mass_kg)];
+  var F=hs?hs.map(function(h){return parseFloat(h.fat_pct);}):
+           [parseFloat(d.prev_fat_pct),parseFloat(d.body_fat_pct)];
+  var labels=hs?hs.map(function(h){return h.date;}):[d.trend_from||'Ant.',d.trend_to||'Act.'];
   var pw=360,ph=100,pL=36,pR=8,pT=16,pB=20;
   var iH=ph-pT-pB;
   var allWM=W.concat(M);
@@ -508,10 +514,31 @@ function injectChart(d) {
   var mpArr=M.map(function(v,i){return sX(i).toFixed(1)+','+sY(v).toFixed(1);}).join(' ');
   var fpArr=F.map(function(v,i){return sX(i).toFixed(1)+','+sYF(v).toFixed(1);}).join(' ');
   var dots='';
-  W.forEach(function(v,i){dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sY(v).toFixed(1)+'" r="3.5" fill="#0d7377"/><text x="'+sX(i).toFixed(1)+'" y="'+(sY(v)-6).toFixed(1)+'" font-size="7" fill="#0d7377" text-anchor="middle">'+v+'<\/text>';});
-  M.forEach(function(v,i){var a=i?'start':'end';dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sY(v).toFixed(1)+'" r="3.5" fill="#16a34a"/><text x="'+(sX(i)+(i?7:-7)).toFixed(1)+'" y="'+(sY(v)-6).toFixed(1)+'" font-size="7" fill="#16a34a" text-anchor="'+a+'">'+v+'<\/text>';});
-  F.forEach(function(v,i){var a=i?'start':'end';dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sYF(v).toFixed(1)+'" r="2.5" fill="#ea580c"/><text x="'+(sX(i)+(i?5:-5)).toFixed(1)+'" y="'+(sYF(v)+3).toFixed(1)+'" font-size="7" fill="#ea580c" text-anchor="'+a+'">'+v+'%<\/text>';});
-  var xl=[d.trend_from||'Ant.',d.trend_to||'Act.'].map(function(l,i){return '<text x="'+sX(i).toFixed(1)+'" y="'+(ph-4)+'" font-size="8" fill="#9ca3af" text-anchor="middle">'+l+'<\/text>';}).join('');
+  // Para N>4 puntos: solo mostrar dot+label en primer y último; intermedios solo dot pequeño
+  var manyPts=W.length>4;
+  W.forEach(function(v,i){
+    var showLbl=!manyPts||i===0||i===W.length-1;
+    dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sY(v).toFixed(1)+'" r="'+(manyPts?2:3.5)+'" fill="#0d7377"\/>';
+    if(showLbl)dots+='<text x="'+sX(i).toFixed(1)+'" y="'+(sY(v)-6).toFixed(1)+'" font-size="7" fill="#0d7377" text-anchor="middle">'+v+'<\/text>';
+  });
+  M.forEach(function(v,i){
+    var showLbl=!manyPts||i===0||i===M.length-1;
+    var a=i?'start':'end';
+    dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sY(v).toFixed(1)+'" r="'+(manyPts?2:3.5)+'" fill="#16a34a"\/>';
+    if(showLbl)dots+='<text x="'+(sX(i)+(i?7:-7)).toFixed(1)+'" y="'+(sY(v)-6).toFixed(1)+'" font-size="7" fill="#16a34a" text-anchor="'+a+'">'+v+'<\/text>';
+  });
+  F.forEach(function(v,i){
+    var showLbl=!manyPts||i===0||i===F.length-1;
+    var a=i?'start':'end';
+    dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sYF(v).toFixed(1)+'" r="'+(manyPts?1.5:2.5)+'" fill="#ea580c"\/>';
+    if(showLbl)dots+='<text x="'+(sX(i)+(i?5:-5)).toFixed(1)+'" y="'+(sYF(v)+3).toFixed(1)+'" font-size="7" fill="#ea580c" text-anchor="'+a+'">'+v+'%<\/text>';
+  });
+  // Eje X: solo primer y último label para no saturar
+  var xl=labels.map(function(l,i){
+    if(i===0||i===labels.length-1)
+      return '<text x="'+sX(i).toFixed(1)+'" y="'+(ph-4)+'" font-size="8" fill="#9ca3af" text-anchor="middle">'+l+'<\/text>';
+    return '';
+  }).join('');
   slot.innerHTML='<div style="border:1px solid #d1d5db;border-radius:7px;padding:6px 8px">'
     +'<div style="font-size:9px;font-weight:600;color:#374151;margin-bottom:3px;display:flex;gap:12px">'
     +'<span>Evolución<\/span>'
