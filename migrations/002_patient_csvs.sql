@@ -20,3 +20,19 @@ CREATE TABLE IF NOT EXISTS patient_csvs (
 CREATE INDEX IF NOT EXISTS patient_csvs_patient_date_idx ON patient_csvs(patient_id, measurement_date DESC);
 CREATE INDEX IF NOT EXISTS patient_csvs_nutri_idx        ON patient_csvs(nutri_id);
 CREATE INDEX IF NOT EXISTS patient_csvs_report_gen_idx   ON patient_csvs(patient_id, report_generated);
+
+-- ── RLS ──────────────────────────────────────────────────────────
+ALTER TABLE patient_csvs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "nutris_ven_sus_patient_csvs"
+  ON patient_csvs FOR SELECT
+  USING (nutri_id = auth.uid());
+
+CREATE POLICY "nutris_insertan_sus_patient_csvs"
+  ON patient_csvs FOR INSERT
+  WITH CHECK (nutri_id = auth.uid());
+
+CREATE POLICY "nutris_actualizan_sus_patient_csvs"
+  ON patient_csvs FOR UPDATE
+  USING (nutri_id = auth.uid())
+  WITH CHECK (nutri_id = auth.uid());
