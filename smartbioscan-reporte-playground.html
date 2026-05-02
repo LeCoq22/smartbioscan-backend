@@ -514,13 +514,13 @@ function injectChart(d) {
   function sX(i){return pL+((tArr[i]-tMin)/tRng)*(pw-pL-pR);}
   var minF=Math.min.apply(null,F)-2,maxF=Math.max.apply(null,F)+2;
   function sYF(v){return pT+iH-((v-minF)/(maxF-minF))*iH;}
-  var leg='<text x="'+pL+'" y="10" font-size="9" font-weight="600" fill="#374151">Evolución<\/text>'
-    +'<line x1="'+(pL+55)+'" y1="9" x2="'+(pL+67)+'" y2="9" stroke="#0d7377" stroke-width="2"\/>'
-    +'<text x="'+(pL+69)+'" y="11" font-size="9" fill="#0d7377">Peso kg<\/text>'
+  var leg='<text x="'+pL+'" y="10" font-size="11" font-weight="700" fill="#374151">Evolución<\/text>'
+    +'<line x1="'+(pL+58)+'" y1="9" x2="'+(pL+70)+'" y2="9" stroke="#0d7377" stroke-width="2"\/>'
+    +'<text x="'+(pL+72)+'" y="11" font-size="9" font-weight="600" fill="#0d7377">Peso kg<\/text>'
     +'<line x1="'+(pL+112)+'" y1="9" x2="'+(pL+124)+'" y2="9" stroke="#16a34a" stroke-width="2"\/>'
-    +'<text x="'+(pL+126)+'" y="11" font-size="9" fill="#16a34a">Músculo kg<\/text>'
-    +'<line x1="'+(pL+185)+'" y1="9" x2="'+(pL+197)+'" y2="9" stroke="#ea580c" stroke-width="1.5" stroke-dasharray="3,2"\/>'
-    +'<text x="'+(pL+199)+'" y="11" font-size="9" fill="#ea580c">% Grasa<\/text>';
+    +'<text x="'+(pL+126)+'" y="11" font-size="9" font-weight="600" fill="#16a34a">Músculo kg<\/text>'
+    +'<line x1="'+(pL+187)+'" y1="9" x2="'+(pL+199)+'" y2="9" stroke="#ea580c" stroke-width="1.5" stroke-dasharray="3,2"\/>'
+    +'<text x="'+(pL+201)+'" y="11" font-size="9" font-weight="600" fill="#ea580c">% Grasa<\/text>';
   var g='';
   [0,.33,.67,1].forEach(function(t){g+='<line x1="'+pL+'" y1="'+(pT+t*iH).toFixed(1)+'" x2="'+(pw-pR)+'" y2="'+(pT+t*iH).toFixed(1)+'" stroke="#e5e7eb" stroke-width="0.5"/>';});
   var wpArr=W.map(function(v,i){return sX(i).toFixed(1)+','+sY(v).toFixed(1);}).join(' ');
