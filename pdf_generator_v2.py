@@ -4,6 +4,17 @@ import os
 from datetime import datetime
 
 
+_MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic']
+
+def _fmt_chart_date(date_str: str) -> str:
+    """'YYYY-MM-DD...' → 'jun 25'"""
+    try:
+        d = datetime.strptime(date_str[:10], '%Y-%m-%d')
+        return f"{_MESES[d.month - 1]} {d.strftime('%y')}"
+    except Exception:
+        return date_str[:7]
+
+
 def _clean_label(label: str) -> str:
     """Strip leading ↓/↑ arrow and capitalize: '↓ Atlética' → 'Atlética'."""
     if not label:
@@ -109,7 +120,7 @@ def _build_data(analysis: dict, doctor_name: str = '') -> dict:
         'ecw_icw_ratio':      act['ratio'],
         # Evolution — serie completa para el gráfico (N puntos)
         'history_series': [
-            {'date': s['date'][:7], 'weight_kg': s['weight_kg'],
+            {'date': _fmt_chart_date(s['date']), 'weight_kg': s['weight_kg'],
              'muscle_kg': s['muscle_kg'], 'fat_pct': s['fat_pct']}
             for s in series
         ] if series else None,

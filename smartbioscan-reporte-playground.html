@@ -500,7 +500,7 @@ function injectChart(d) {
   var F=hs?hs.map(function(h){return parseFloat(h.fat_pct);}):
            [parseFloat(d.prev_fat_pct),parseFloat(d.body_fat_pct)];
   var labels=hs?hs.map(function(h){return h.date;}):[d.trend_from||'Ant.',d.trend_to||'Act.'];
-  var pw=360,ph=100,pL=36,pR=8,pT=16,pB=20;
+  var pw=360,ph=100,pL=36,pR=8,pT=16,pB=34;
   var iH=ph-pT-pB;
   var allWM=W.concat(M);
   var minWM=Math.min.apply(null,allWM)-2,maxWM=Math.max.apply(null,allWM)+2;
@@ -533,11 +533,11 @@ function injectChart(d) {
     dots+='<circle cx="'+sX(i).toFixed(1)+'" cy="'+sYF(v).toFixed(1)+'" r="'+(manyPts?1.5:2.5)+'" fill="#ea580c"\/>';
     if(showLbl)dots+='<text x="'+(sX(i)+(i?5:-5)).toFixed(1)+'" y="'+(sYF(v)+3).toFixed(1)+'" font-size="7" fill="#ea580c" text-anchor="'+a+'">'+v+'%<\/text>';
   });
-  // Eje X: solo primer y último label para no saturar
+  // Eje X: tick por cada medición, rotado -45° con text-anchor="end"
   var xl=labels.map(function(l,i){
-    if(i===0||i===labels.length-1)
-      return '<text x="'+sX(i).toFixed(1)+'" y="'+(ph-4)+'" font-size="8" fill="#9ca3af" text-anchor="middle">'+l+'<\/text>';
-    return '';
+    var x=sX(i).toFixed(1), y=(ph-20).toFixed(1);
+    return '<text x="'+x+'" y="'+y+'" font-size="7.5" fill="#9ca3af" text-anchor="end"'
+      +' transform="rotate(-45,'+x+','+y+')">'+l+'<\/text>';
   }).join('');
   slot.innerHTML='<div style="border:1px solid #d1d5db;border-radius:7px;padding:6px 8px">'
     +'<div style="font-size:9px;font-weight:600;color:#374151;margin-bottom:3px;display:flex;gap:12px">'
