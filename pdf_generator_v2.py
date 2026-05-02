@@ -1,3 +1,4 @@
+import base64
 import json
 import re
 import os
@@ -151,5 +152,10 @@ def generate_html_v2(analysis: dict, doctor_name: str = '') -> str:
         html, count=1,
     )
     html = html.replace('<style>', '<style>#controls{display:none!important}', 1)
+
+    _favicon_path = os.path.join(os.path.dirname(__file__), 'static', 'favicon.png')
+    with open(_favicon_path, 'rb') as _f:
+        _favicon_b64 = base64.b64encode(_f.read()).decode()
+    html = html.replace('{{FAVICON_B64}}', _favicon_b64)
 
     return html
