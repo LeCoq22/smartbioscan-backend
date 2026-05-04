@@ -181,6 +181,7 @@ class ApproveWaitlistResponse(BaseModel):
     nutri_id: Optional[str] = None
     invite_id: Optional[str] = None
     expires_at: Optional[str] = None
+    set_password_url: Optional[str] = None
 
 class CreateAdminNutriRequest(BaseModel):
     email: EmailStr
@@ -193,6 +194,7 @@ class CreateAdminNutriResponse(BaseModel):
     nutri_id: Optional[str] = None
     invite_id: Optional[str] = None
     expires_at: Optional[str] = None
+    set_password_url: Optional[str] = None
 
 
 # ─────────────────────────────────────────────
@@ -801,11 +803,13 @@ async def approve_waitlist(
             'approved_by': admin_id,
         }).eq('id', waitlist_id).execute()
 
+        frontend_url = os.getenv('FRONTEND_URL', 'https://app.smartbioscan.com')
         return ApproveWaitlistResponse(
             ok=True,
             nutri_id=user_id,
             invite_id=result['invite_id'],
             expires_at=result['expires_at'],
+            set_password_url=f"{frontend_url}/set-password?token={result['token']}",
         )
 
     except HTTPException:
@@ -851,11 +855,13 @@ async def create_admin_nutri(
         if body.phone:
             db.client.table('nutris').update({'phone': body.phone}).eq('id', user_id).execute()
 
+        frontend_url = os.getenv('FRONTEND_URL', 'https://app.smartbioscan.com')
         return CreateAdminNutriResponse(
             ok=True,
             nutri_id=user_id,
             invite_id=result['invite_id'],
             expires_at=result['expires_at'],
+            set_password_url=f"{frontend_url}/set-password?token={result['token']}",
         )
 
     except HTTPException:
