@@ -277,6 +277,54 @@ async def get_report_html(
         raise HTTPException(status_code=404, detail="HTML no disponible para este reporte")
 
 
+@app.get("/reports/{report_id}/pdf")
+async def download_report_pdf(
+    report_id: str,
+    nutri_id: str = Depends(get_current_nutri),
+):
+    """
+    Descarga el PDF del reporte como archivo binario con Content-Disposition.
+    El nombre del archivo incluye el nombre del paciente y la fecha.
+    """
+    import re
+    from db import DB
+    db = DB()
+
+    res = (db.client.table('reports')
+           .select('pdf_storage_path, measurement_date, patient_id')
+           .eq('id', report_id)
+           .eq('nutri_id', nutri_id)
+           .execute())
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    row = res.data[0]
+    pdf_path = row.get('pdf_storage_path', '')
+    measurement_date = (row.get('measurement_date') or '')[:10]
+
+    patient_res = (db.client.table('patients')
+                   .select('full_name')
+                   .eq('id', row['patient_id'])
+                   .limit(1)
+                   .execute())
+    patient_name = patient_res.data[0].get('full_name', 'paciente') if patient_res.data else 'paciente'
+
+    safe_name = re.sub(r'[^a-z0-9]+', '-', patient_name.lower()).strip('-')
+    filename = f"reporte-{safe_name}-{measurement_date}.pdf"
+
+    try:
+        pdf_bytes = db.client.storage.from_('reports').download(pdf_path)
+    except Exception:
+        raise HTTPException(status_code=404, detail="PDF no disponible para este reporte")
+
+    return HTMLResponse(
+        content=pdf_bytes,
+        media_type='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
 @app.post("/patients/verify-credentials", response_model=VerifyCredentialsResponse)
 async def verify_credentials(
     body: VerifyCredentialsRequest,
