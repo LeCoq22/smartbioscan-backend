@@ -75,6 +75,7 @@ create table public.nutris (
 
     -- Metadata
     notes               text,                         -- notas internas SmartBMI
+    role                text not null default 'user' check (role in ('user', 'admin')),
     created_at          timestamptz not null default now(),
     updated_at          timestamptz not null default now()
 );
