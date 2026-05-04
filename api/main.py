@@ -745,6 +745,18 @@ async def login_hint(request: Request, body: LoginHintRequest):
     return LoginHintResponse(hint=hint)
 
 
+@app.get("/admin/waitlist")
+async def list_waitlist(
+    status: str = "pending",
+    admin_id: str = Depends(get_admin_nutri),
+):
+    """Lista entradas de la waitlist filtradas por status (default: pending)."""
+    from db import DB
+    db = DB()
+    res = db.client.table('waitlist').select('*').eq('status', status).order('created_at').execute()
+    return {"items": res.data, "total": len(res.data)}
+
+
 @app.post("/admin/waitlist/{waitlist_id}/approve", response_model=ApproveWaitlistResponse)
 async def approve_waitlist(
     waitlist_id: str,
