@@ -21,12 +21,15 @@ create type nutri_origin as enum (
     'smartbmi_hardware',   -- compró la balanza o el kit SmartBMI
     'smartbmi_protocol',   -- compró solo el protocolo post-venta
     'organic',             -- llegó solo, sin campaña
-    'campaign'             -- llegó por campaña de marketing
+    'campaign',            -- llegó por campaña de marketing
+    'waitlist',            -- se anotó en la lista de espera de la landing
+    'manual'               -- creado manualmente por un admin
 );
 
 create type subscription_type as enum (
     'free_trial',
     'invitation',          -- invitado por SmartBMI (beta testers, partners)
+    'beta',                -- acceso beta (waitlist aprobada o invite manual)
     'monthly',
     'quarterly',
     'annual'
@@ -384,7 +387,59 @@ Plan         | max_patients | max_reports_month | subscription_type
 -------------|--------------|-------------------|------------------
 Free Trial   |      3       |         5         | free_trial
 Invitación   |     10       |        30         | invitation
+Beta         |     20       |        50         | beta
 Basic        |     15       |        30         | monthly/quarterly/annual
 Pro          |     40       |       100         | monthly/quarterly/annual
 Clinic       |    150       |       500         | monthly/annual
 */
+
+
+-- ────────────────────────────────────────────────────────────
+-- TABLA: waitlist  (migración 006)
+-- Solicitudes de acceso desde la landing.
+-- ────────────────────────────────────────────────────────────
+
+create table public.waitlist (
+    id              uuid        default gen_random_uuid() primary key,
+    nombre          text        not null,
+    email           text        not null unique,
+    profesion       text,
+    status          text        not null default 'pending'
+                                check (status in ('pending', 'approved', 'rejected')),
+    approved_at     timestamptz,
+    approved_by     uuid references public.nutris(id),
+    rejected_at     timestamptz,
+    rejected_reason text,
+    created_at      timestamptz not null default now()
+);
+
+comment on table  public.waitlist        is 'Solicitudes de acceso desde la landing';
+comment on column public.waitlist.status is 'pending | approved | rejected';
+
+alter table public.waitlist enable row level security;
+create policy "anon_insert" on public.waitlist
+    for insert to anon with check (true);
+
+
+-- ────────────────────────────────────────────────────────────
+-- TABLA: beta_invites  (migración 006)
+-- Tokens de activación de cuenta para beta testers.
+-- ────────────────────────────────────────────────────────────
+
+create table public.beta_invites (
+    id          uuid        default gen_random_uuid() primary key,
+    nutri_id    uuid        not null references public.nutris(id) on delete cascade,
+    token       text        not null unique,
+    expires_at  timestamptz not null,
+    used_at     timestamptz,
+    created_at  timestamptz not null default now()
+);
+
+create index idx_beta_invites_token on public.beta_invites(token);
+create index idx_beta_invites_nutri on public.beta_invites(nutri_id);
+
+comment on table  public.beta_invites         is 'Tokens de activación de cuenta para beta testers';
+comment on column public.beta_invites.used_at is 'NULL = link disponible; NOT NULL = ya usado';
+
+alter table public.beta_invites enable row level security;
+-- Sin policies = sólo service key puede acceder

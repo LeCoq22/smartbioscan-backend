@@ -11,3 +11,4 @@ python-multipart
 pandas
 matplotlib
 pdfkit
+resend
