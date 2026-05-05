@@ -617,19 +617,30 @@ async def join_waitlist(body: WaitlistRequest):
 
     from db import DB
     db = DB()
+
+    # ── Paso 1: insert — único lugar donde puede haber duplicate ─────────
     try:
         db.client.table('waitlist').insert({
             'nombre':    body.nombre.strip(),
             'email':     body.email.strip().lower(),
             'profesion': body.profesion,
         }).execute()
-        send_waitlist_confirmation(body.email.strip().lower(), body.nombre.strip())
     except Exception as exc:
         err = str(exc).lower()
         if 'unique' in err or 'duplicate' in err or '23505' in err:
-            # Email duplicado — silencioso
             return WaitlistResponse(success=True, message="Recibimos tu solicitud")
         raise HTTPException(status_code=500, detail="Error al procesar la solicitud")
+
+    # ── Paso 2: Email A — nunca bloquea ni rompe el response ─────────────
+    try:
+        eid = send_waitlist_confirmation(body.email.strip().lower(), body.nombre.strip())
+        if eid is None:
+            _logger.error(
+                "send_waitlist_confirmation retornó None para %s — revisar logs de email.py",
+                body.email.strip().lower(),
+            )
+    except Exception as exc:
+        _logger.error("Excepción enviando Email A a %s: %s", body.email.strip().lower(), exc)
 
     return WaitlistResponse(success=True, message="Recibimos tu solicitud")
 

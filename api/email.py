@@ -22,6 +22,9 @@ def _get_resend():
         return _r
     except ImportError:
         return None
+    except Exception as exc:
+        logger.error("Error al cargar módulo resend: %s", exc)
+        return None
 
 
 def send_waitlist_confirmation(to_email: str, nombre: str) -> Optional[str]:
