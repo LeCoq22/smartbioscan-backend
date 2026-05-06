@@ -183,7 +183,7 @@ var DEMO = {
   ecw_l:11.19, icw_l:18.56, ecw_icw_ratio:0.6,
   prev_weight:51.0, prev_muscle:40.45, prev_fat_pct:16.4, prev_bmr:1240,
   trend_from:'2023-03', trend_to:'2026-04',
-  nutri_name:'García Paz', nutri_specialty:'Nutricionista'
+  display_signature:'García Paz - Nutricionista'
 };
 
 // ── Helpers ──────────────────────────────────────────────────
@@ -257,7 +257,7 @@ function page1(d){
   var html='<div class="page" id="p1">';
   html+='<div class="rh"><div class="rh-l"><div class="brand">SmartBioScan<\/div><div class="sub">Resultados de Composición Corporal<\/div><\/div>'
     +'<div class="rh-r"><div class="pname">'+d.full_name+'<\/div><div class="pdate">'+d.measurement_date+'<\/div>'
-    +(d.nutri_name?'<div class="nutri">Lic. '+d.nutri_name+' · '+(d.nutri_specialty||'')+'<\/div>':'')
+    +(d.display_signature?'<div class="nutri">'+d.display_signature+'<\/div>':'')
     +'<\/div><\/div>';
   html+='<div class="vrow">'
     +'<div class="vc"><div class="vc-lbl">Altura<\/div><div class="vc-val">'+fi(d.height_cm)+'<\/div><div class="vc-unit">cm<\/div><\/div>'

@@ -210,7 +210,7 @@ def generate_html(result, doctor_name=""):
     sex_lbl = "Femenino" if p.sex == 'F' else "Masculino"
     dec = p.age // 10 * 10
     doc_html = (f'<div style="font-size:9px;color:#5c5b55;margin-top:2px">'
-                f'Médico tratante: {doctor_name}</div>') if doctor_name else ""
+                f'{doctor_name}</div>') if doctor_name else ""
 
     visc_b = badge("Saludable","exc") if m.visceral_fat<=12 else badge("Levemente alto","warn")
     meta_d = k['metabolic_age']['diff']

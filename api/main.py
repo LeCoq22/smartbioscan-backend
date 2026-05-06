@@ -316,6 +316,15 @@ class CreateAdminNutriResponse(BaseModel):
     expires_at: Optional[str] = None
     set_password_url: Optional[str] = None
 
+class NutriMeResponse(BaseModel):
+    id: str
+    email: str
+    full_name: str
+    display_signature: Optional[str] = None
+
+class UpdateNutriMeRequest(BaseModel):
+    display_signature: str
+
 
 # ─────────────────────────────────────────────
 # AUTH DEPENDENCIES
@@ -718,10 +727,61 @@ async def register_nutri(body: RegisterNutriRequest):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# PERFIL PROPIO DEL NUTRI
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/api/nutris/me", response_model=NutriMeResponse)
+async def get_nutri_me(nutri_id: str = Depends(get_current_nutri)):
+    """Retorna el perfil del nutri autenticado."""
+    from db import DB
+    db = DB()
+    res = (db.client.table('nutris')
+           .select('id, email, full_name, display_signature')
+           .eq('id', nutri_id)
+           .single()
+           .execute())
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Nutri no encontrado")
+    return res.data
+
+
+@app.patch("/api/nutris/me")
+async def update_nutri_me(
+    body: UpdateNutriMeRequest,
+    nutri_id: str = Depends(get_current_nutri),
+):
+    """Actualiza el display_signature del nutri autenticado."""
+    sig = body.display_signature.strip()
+    if not sig:
+        raise HTTPException(status_code=422, detail="La firma no puede estar vacía")
+    if len(sig) > 120:
+        raise HTTPException(status_code=422, detail="La firma no puede superar 120 caracteres")
+    if any(c in sig for c in ('\n', '\r')):
+        raise HTTPException(status_code=422, detail="La firma no puede contener saltos de línea")
+    if any(ord(c) < 32 for c in sig):
+        raise HTTPException(status_code=422, detail="La firma contiene caracteres no permitidos")
+
+    from db import DB
+    db = DB()
+    db.client.table('nutris').update({'display_signature': sig}).eq('id', nutri_id).execute()
+    return {"ok": True, "display_signature": sig}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # ONBOARDING — Waitlist + Invites
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+
+_PROFESION_LABELS = {
+    'nutricionista': 'Nutricionista',
+    'medico':        'Médico clínico',
+    'entrenador':    'Entrenador personal',
+    'otro':          'Profesional de salud',
+}
+
+def _humanize_profesion(profesion: Optional[str]) -> str:
+    return _PROFESION_LABELS.get(profesion or '', '')
 
 
 def _create_nutri_and_invite(db, user_id: str, email: str, full_name: str,
@@ -732,6 +792,8 @@ def _create_nutri_and_invite(db, user_id: str, email: str, full_name: str,
     """
     frontend_url = os.getenv('FRONTEND_URL', 'https://app.smartbioscan.com')
     notes = f"Profesión: {profesion}" if profesion else None
+    prof_label = _humanize_profesion(profesion)
+    display_signature = f"{full_name} - {prof_label}" if prof_label else full_name
 
     db.client.table('nutris').insert({
         'id':                 user_id,
@@ -744,6 +806,7 @@ def _create_nutri_and_invite(db, user_id: str, email: str, full_name: str,
         'max_patients':       20,
         'role':               'user',
         'notes':              notes,
+        'display_signature':  display_signature,
     }).execute()
 
     token      = secrets.token_hex(32)

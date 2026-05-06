@@ -131,9 +131,8 @@ def _build_data(analysis: dict, doctor_name: str = '') -> dict:
         'prev_bmr':           series[0]['tmb']         if has_prev else None,
         'trend_from':         evol.get('date_first'),
         'trend_to':           evol.get('date_last'),
-        # Nutritionist
-        'nutri_name':         doctor_name,
-        'nutri_specialty':    'Nutricionista',
+        # Nutritionist — display_signature se muestra tal cual, sin prefijo
+        'display_signature':  doctor_name,
     }
 
 

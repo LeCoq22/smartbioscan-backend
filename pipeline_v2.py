@@ -460,7 +460,9 @@ def _calc_age(dob_str) -> int:
 def _get_nutri_name(db, nutri_id) -> str:
     try:
         nutri = db.get_nutri(nutri_id)
-        return nutri.get('full_name', '') if nutri else ''
+        if not nutri:
+            return ''
+        return nutri.get('display_signature') or nutri.get('full_name') or ''
     except:
         return ''
 

@@ -220,7 +220,7 @@ def generate_html(result: dict, doctor_name: str = "") -> str:
     sex_lbl = "Femenino" if p.sex == 'F' else "Masculino"
     dec = p.age // 10 * 10
     doc_html = (f'<div style="font-size:10px;color:var(--color-text-secondary);margin-top:2px">'
-                f'Médico tratante: {doctor_name}</div>') if doctor_name else ""
+                f'{doctor_name}</div>') if doctor_name else ""
 
     # ── Badges parámetros clave ──
     visc_b  = badge("Saludable","exc") if m.visceral_fat<=12 else badge("Levemente alto","warn")
