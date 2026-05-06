@@ -12,3 +12,4 @@ pandas
 matplotlib
 pdfkit
 resend
+python-jose[cryptography]

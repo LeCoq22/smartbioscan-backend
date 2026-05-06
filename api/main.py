@@ -7,6 +7,7 @@ Arrancar:
     uvicorn api.main:app --reload --port 8000
 """
 
+import asyncio
 import logging
 import os
 import re
@@ -19,10 +20,12 @@ from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Optional
 
+import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Depends, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response as HTMLResponse
+from jose import jwt as _jose_jwt, JWTError as _JWTError
 from pydantic import BaseModel, EmailStr
 
 _logger = logging.getLogger("smartbioscan.api")
@@ -43,6 +46,11 @@ from api.email import send_waitlist_confirmation, send_welcome_email
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("SmartTanita API arrancando...")
+    try:
+        await _get_jwks_cached()
+        _logger.info("JWKS precargado: %d keys", len((_jwks_data or {}).get("keys", [])))
+    except Exception as exc:
+        _logger.warning("No se pudo precargar JWKS en startup: %s", exc)
     yield
     print("SmartTanita API apagándose...")
 
@@ -76,17 +84,129 @@ app.add_middleware(
 
 
 # ─────────────────────────────────────────────
+# JWT / JWKS — Verificación de tokens Supabase (ES256)
+# ─────────────────────────────────────────────
+
+_JWKS_URL        = os.getenv(
+    "SUPABASE_JWKS_URL",
+    "https://ivwderljwrwjzmgcmens.supabase.co/auth/v1/.well-known/jwks.json",
+)
+_JWKS_TTL        = 1800           # segundos — refresca cada 30 min
+_jwks_data: Optional[dict] = None
+_jwks_fetched_at: float    = 0.0
+
+
+def _fetch_jwks_sync() -> dict:
+    resp = httpx.get(_JWKS_URL, timeout=5.0)
+    resp.raise_for_status()
+    return resp.json()
+
+
+async def _get_jwks_cached(force: bool = False) -> dict:
+    global _jwks_data, _jwks_fetched_at
+    now = _time.time()
+    if not force and _jwks_data is not None and (now - _jwks_fetched_at) < _JWKS_TTL:
+        return _jwks_data
+    loop = asyncio.get_running_loop()
+    data = await loop.run_in_executor(None, _fetch_jwks_sync)
+    _jwks_data       = data
+    _jwks_fetched_at = _time.time()
+    return data
+
+
+async def _verify_supabase_jwt(token: str) -> dict:
+    """Verifica JWT de Supabase (ES256/JWKS). Retorna payload o lanza HTTPException."""
+    try:
+        header = _jose_jwt.get_unverified_header(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Token malformado")
+
+    kid = header.get("kid")
+    if not kid:
+        raise HTTPException(status_code=401, detail="Token malformado: sin kid")
+
+    def _find_key(jwks: dict) -> Optional[dict]:
+        return next((k for k in jwks.get("keys", []) if k.get("kid") == kid), None)
+
+    try:
+        jwks = await _get_jwks_cached()
+    except Exception as exc:
+        _logger.error("JWKS fetch error: %s", exc)
+        raise HTTPException(status_code=503, detail="Servicio de autenticación no disponible")
+
+    key_data = _find_key(jwks)
+    if key_data is None:
+        # kid desconocido — puede que rotaron la key; refrescar una vez
+        try:
+            jwks = await _get_jwks_cached(force=True)
+        except Exception as exc:
+            _logger.error("JWKS re-fetch error: %s", exc)
+            raise HTTPException(status_code=503, detail="Servicio de autenticación no disponible")
+        key_data = _find_key(jwks)
+
+    if key_data is None:
+        raise HTTPException(status_code=401, detail="Token inválido: clave desconocida")
+
+    try:
+        payload = _jose_jwt.decode(
+            token, key_data,
+            algorithms=["ES256"],
+            options={"verify_aud": False},
+        )
+        return payload
+    except _JWTError as exc:
+        raise HTTPException(status_code=401, detail=f"Token inválido: {exc}")
+
+
+# ─────────────────────────────────────────────
 # AUTH — valida que el request viene del Nutri correcto
 # ─────────────────────────────────────────────
 
-async def get_current_nutri(x_nutri_id: str = Header(..., alias="X-Nutri-Id")):
-    """
-    Header simple por ahora. En Fase 2 esto pasa a JWT de Supabase Auth.
-    El frontend manda: X-Nutri-Id: <uuid>
-    """
-    if not x_nutri_id:
-        raise HTTPException(status_code=401, detail="X-Nutri-Id header requerido")
-    return x_nutri_id
+async def get_current_nutri(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_nutri_id: Optional[str] = Header(None, alias="X-Nutri-Id"),
+) -> str:
+    """Verifica JWT de Supabase y retorna el nutri_id del payload (sub)."""
+    ip = request.client.host if request.client else "unknown"
+
+    if x_nutri_id:
+        _logger.warning(
+            "X-Nutri-Id obsoleto recibido en %s desde %s — ignorado",
+            request.url.path, ip,
+        )
+
+    if not authorization or not authorization.startswith("Bearer "):
+        _logger.warning(
+            "auth_reject path=%s ip=%s reason=missing_bearer",
+            request.url.path, ip,
+        )
+        raise HTTPException(status_code=401, detail="Authorization header requerido")
+
+    token = authorization.removeprefix("Bearer ")
+    payload = await _verify_supabase_jwt(token)
+
+    nutri_id = payload.get("sub")
+    if not nutri_id:
+        raise HTTPException(status_code=401, detail="Token inválido: sin sub")
+
+    try:
+        from db import DB
+        db = DB()
+        res = db.client.table('nutris').select('id').eq('id', nutri_id).single().execute()
+        if not res.data:
+            _logger.warning(
+                "auth_reject path=%s ip=%s sub=%s iat=%s exp=%s reason=nutri_not_found",
+                request.url.path, ip, nutri_id, payload.get("iat"), payload.get("exp"),
+            )
+            raise HTTPException(status_code=401, detail="Usuario no registrado")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _logger.error("auth DB error path=%s sub=%s: %s", request.url.path, nutri_id, exc)
+        raise HTTPException(status_code=401, detail="Error al verificar usuario")
+
+    return nutri_id
 
 
 # ─────────────────────────────────────────────
@@ -201,21 +321,58 @@ class CreateAdminNutriResponse(BaseModel):
 # AUTH DEPENDENCIES
 # ─────────────────────────────────────────────
 
-async def get_admin_nutri(x_nutri_id: str = Header(..., alias="X-Nutri-Id")):
-    """Verifica que el header X-Nutri-Id corresponde a un Nutri con role='admin'."""
-    if not x_nutri_id:
-        raise HTTPException(status_code=401, detail="X-Nutri-Id header requerido")
+async def get_admin_nutri(
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_nutri_id: Optional[str] = Header(None, alias="X-Nutri-Id"),
+) -> str:
+    """Verifica JWT de Supabase y retorna nutri_id si el usuario tiene role=admin."""
+    ip = request.client.host if request.client else "unknown"
+
+    if x_nutri_id:
+        _logger.warning(
+            "X-Nutri-Id obsoleto recibido en %s desde %s — ignorado",
+            request.url.path, ip,
+        )
+
+    if not authorization or not authorization.startswith("Bearer "):
+        _logger.warning(
+            "admin_auth_reject path=%s ip=%s reason=missing_bearer",
+            request.url.path, ip,
+        )
+        raise HTTPException(status_code=401, detail="Authorization header requerido")
+
+    token = authorization.removeprefix("Bearer ")
+    payload = await _verify_supabase_jwt(token)
+
+    nutri_id = payload.get("sub")
+    if not nutri_id:
+        raise HTTPException(status_code=401, detail="Token inválido: sin sub")
+
     try:
         from db import DB
         db = DB()
-        res = db.client.table('nutris').select('role').eq('id', x_nutri_id).single().execute()
-        if not res.data or res.data.get('role') != 'admin':
+        res = db.client.table('nutris').select('role').eq('id', nutri_id).single().execute()
+        if not res.data:
+            _logger.warning(
+                "admin_auth_reject path=%s ip=%s sub=%s iat=%s exp=%s reason=nutri_not_found",
+                request.url.path, ip, nutri_id, payload.get("iat"), payload.get("exp"),
+            )
+            raise HTTPException(status_code=401, detail="Usuario no registrado")
+        role = res.data.get('role')
+        if role != 'admin':
+            _logger.warning(
+                "admin_auth_reject path=%s ip=%s sub=%s role=%s iat=%s exp=%s reason=not_admin",
+                request.url.path, ip, nutri_id, role, payload.get("iat"), payload.get("exp"),
+            )
             raise HTTPException(status_code=403, detail="Acceso de admin requerido")
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
+        _logger.error("admin_auth DB error path=%s sub=%s: %s", request.url.path, nutri_id, exc)
         raise HTTPException(status_code=403, detail="No se pudo verificar el rol admin")
-    return x_nutri_id
+
+    return nutri_id
 
 
 # ─────────────────────────────────────────────
