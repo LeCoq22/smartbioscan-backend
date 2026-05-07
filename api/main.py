@@ -303,6 +303,12 @@ class ApproveWaitlistResponse(BaseModel):
     expires_at: Optional[str] = None
     set_password_url: Optional[str] = None
 
+class RejectWaitlistRequest(BaseModel):
+    reason: Optional[str] = None
+
+class RejectWaitlistResponse(BaseModel):
+    ok: bool
+
 class CreateAdminNutriRequest(BaseModel):
     email: EmailStr
     full_name: str
@@ -1052,6 +1058,34 @@ async def approve_waitlist(
             except Exception:
                 pass
         raise HTTPException(status_code=500, detail=f"Error al aprobar: {exc}")
+
+
+@app.post("/admin/waitlist/{waitlist_id}/reject", response_model=RejectWaitlistResponse)
+async def reject_waitlist(
+    waitlist_id: str,
+    body: RejectWaitlistRequest,
+    admin_id: str = Depends(get_admin_nutri),
+):
+    """Rechaza una solicitud de la waitlist. Preparado para envío de email posterior."""
+    from db import DB
+    db = DB()
+
+    w = db.client.table("waitlist").select("*").eq("id", waitlist_id).execute()
+    if not w.data:
+        raise HTTPException(status_code=404, detail="Solicitud no encontrada")
+    wl = w.data[0]
+    if wl["status"] != "pending":
+        raise HTTPException(status_code=400, detail=f"Solicitud ya procesada: {wl['status']}")
+
+    try:
+        db.client.table("waitlist").update({
+            "status":          "rejected",
+            "rejected_at":     datetime.now(timezone.utc).isoformat(),
+            "rejected_reason": body.reason,
+        }).eq("id", waitlist_id).execute()
+        return RejectWaitlistResponse(ok=True)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Error al rechazar: {exc}")
 
 
 @app.post("/admin/nutris", response_model=CreateAdminNutriResponse)
