@@ -402,7 +402,7 @@ async def run_pipeline(
             db.upload_html(nutri_id, report_id, html)
             print(f"[Pipeline] ✓ HTML en Storage: {nutri_id}/{report_id}.html")
 
-            # Registrar reporte
+            # Registrar reporte — report_id fija la PK para que coincida con el path de Storage
             elapsed = round(time.time() - t_start, 2)
             report = db.create_report(
                 patient_id    = patient_id,
@@ -419,6 +419,7 @@ async def run_pipeline(
                 csv_raw        = scrape['csv_content'],
                 pdf_path       = storage_path,
                 generation_secs = elapsed,
+                report_id      = report_id,
             )
             result['report_id'] = report['id']
             print(f"[Pipeline] ✓ Reporte registrado: {report['id']}")

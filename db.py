@@ -179,10 +179,12 @@ class DB:
 
     def create_report(self, patient_id: str, nutri_id: str,
                       measurement: dict, csv_raw: str,
-                      pdf_path: str, generation_secs: float) -> dict:
+                      pdf_path: str, generation_secs: float,
+                      report_id: str = None) -> dict:
         """
         Registra un nuevo reporte en la BD.
         measurement: dict con los campos clave de la medición.
+        report_id: UUID a usar como PK — debe coincidir con el path de Storage.
         """
         payload = {
             'patient_id':         patient_id,
@@ -198,6 +200,8 @@ class DB:
             'pdf_storage_path':   pdf_path,
             'generation_secs':    generation_secs,
         }
+        if report_id:
+            payload['id'] = report_id
         res = self.client.table('reports').insert(payload).execute()
         report = res.data[0]
 
