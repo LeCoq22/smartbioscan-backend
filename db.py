@@ -14,12 +14,15 @@ Uso:
     creds   = db.get_tanita_credentials(patient_id)
 """
 
+import logging
 import os
 import hashlib
 import base64
 from datetime import datetime, timezone
 from typing import Optional
 from supabase import create_client, Client
+
+_logger = logging.getLogger("smartbioscan.db")
 
 
 # ── Encriptación simple AES-256 via Fernet (cryptography) ────────────────────
@@ -385,10 +388,21 @@ class DB:
             })
         if not rows:
             return 0
+        # Dedup intra-batch: Postgres rechaza ON CONFLICT cuando dos filas
+        # del mismo comando comparten la clave (patient_id, measurement_date).
+        seen: dict[tuple, dict] = {}
+        for row in rows:
+            seen[(row['patient_id'], row['measurement_date'])] = row  # last-wins
+        deduped = list(seen.values())
+        if len(deduped) < len(rows):
+            _logger.warning(
+                "upsert_patient_csvs: %d duplicado(s) descartado(s) para patient_id=%s",
+                len(rows) - len(deduped), patient_id,
+            )
         self.client.table('patient_csvs').upsert(
-            rows, on_conflict='patient_id,measurement_date'
+            deduped, on_conflict='patient_id,measurement_date'
         ).execute()
-        return len(rows)
+        return len(deduped)
 
     def get_patient_csvs(self, patient_id: str, limit: int = 50) -> list:
         """Retorna las mediciones del paciente ordenadas por fecha desc."""

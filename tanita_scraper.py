@@ -419,7 +419,16 @@ def csv_row_to_dict(row: pd.Series, cols: list[str]) -> dict:
 def extract_all_measurements(df: pd.DataFrame) -> list[dict]:
     """Devuelve una lista de dicts (uno por fila) para hacer upsert en patient_csvs."""
     cols = list(df.columns)
-    return [csv_row_to_dict(df.iloc[i], cols) for i in range(len(df))]
+    raw = [csv_row_to_dict(df.iloc[i], cols) for i in range(len(df))]
+    # Dedup defensivo por date (last-wins). Filas sin date se descartan aquí
+    # porque upsert_patient_csvs las filtra igual con su continue existente.
+    seen: dict[str, dict] = {}
+    for m in raw:
+        date = m.get('date')
+        if not date:
+            continue
+        seen[date] = m
+    return list(seen.values())
 
 
 def extract_latest(df: pd.DataFrame) -> dict:
