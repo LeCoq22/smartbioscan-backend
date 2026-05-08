@@ -25,6 +25,13 @@ def _clean_label(label: str) -> str:
     return s.capitalize()
 
 
+def _age_band(age: int) -> str:
+    if age < 40: return '< 40'
+    if age < 50: return '40–49'
+    if age < 60: return '50–59'
+    return '60+'
+
+
 def _fmt_date(date_str: str) -> str:
     """'YYYY-MM-DD HH:MM:SS' → 'DD/MM/YYYY · HH:MM'."""
     try:
@@ -65,6 +72,9 @@ def _build_data(analysis: dict, doctor_name: str = '') -> dict:
         'metabolic_age':      m.metabolic_age,
         'body_fat_pct':       m.body_fat_pct,
         'fat_label':          fat['global_cat'],
+        'fat_ref_normal_min': fat['fat_ref_normal'][0],
+        'fat_ref_normal_max': fat['fat_ref_normal'][1],
+        'fat_ref_age_label':  _age_band(p.age),
         'total_body_water_l': act['act_kg'],
         'tbw_pct':            act['act_pct'],
         'muscle_mass_kg':     m.muscle_mass_kg,
@@ -93,6 +103,16 @@ def _build_data(analysis: dict, doctor_name: str = '') -> dict:
         'fat_leg_r_pct':      sf['right_leg']['pct'],
         'fat_leg_r_lvl':      sf['right_leg']['level'],
         'fat_leg_r_label':    _clean_label(sf['right_leg']['cat']),
+        # Segmental fat references
+        'fat_trunk_ref_min':  sf['trunk']['ref'][0],
+        'fat_trunk_ref_max':  sf['trunk']['ref'][1],
+        'fat_trunk_ref_ideal': sf['trunk']['ideal'],
+        'fat_arm_ref_min':    sf['right_arm']['ref'][0],
+        'fat_arm_ref_max':    sf['right_arm']['ref'][1],
+        'fat_arm_ref_ideal':  sf['right_arm']['ideal'],
+        'fat_leg_ref_min':    sf['right_leg']['ref'][0],
+        'fat_leg_ref_max':    sf['right_leg']['ref'][1],
+        'fat_leg_ref_ideal':  sf['right_leg']['ideal'],
         # Segmental muscle
         'muscle_trunk_kg':    sm['trunk']['kg'],
         'muscle_trunk_pct':   sm['trunk']['pct_ideal'],

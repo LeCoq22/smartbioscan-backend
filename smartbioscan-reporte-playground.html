@@ -163,6 +163,7 @@ var DEMO = {
   height_cm:174, age:48, sex:'Femenino', weight_kg:53.9, bmi:21.6,
   heart_rate:68, bmr_kcal:1274, visceral_fat:3, metabolic_age:33,
   body_fat_pct:18.7, fat_label:'Atlético',
+  fat_ref_normal_min:23, fat_ref_normal_max:35, fat_ref_age_label:'40–49',
   total_body_water_l:29.75, tbw_pct:55.2,
   muscle_mass_kg:41.6, smm_kg:35.0, smm_index:11.56,
   bone_mass_kg:2.2, bone_pct:4.08, bone_label:'Leve',
@@ -173,6 +174,9 @@ var DEMO = {
   fat_arm_r_pct:19.0, fat_arm_r_lvl:68, fat_arm_r_label:'Atlética',
   fat_leg_l_pct:31.9, fat_leg_l_lvl:100, fat_leg_l_label:'Normal',
   fat_leg_r_pct:31.6, fat_leg_r_lvl:99, fat_leg_r_label:'Normal',
+  fat_trunk_ref_min:20, fat_trunk_ref_max:28, fat_trunk_ref_ideal:24,
+  fat_arm_ref_min:23, fat_arm_ref_max:33, fat_arm_ref_ideal:28,
+  fat_leg_ref_min:26, fat_leg_ref_max:38, fat_leg_ref_ideal:32,
   muscle_trunk_kg:24.8, muscle_trunk_pct:100,
   muscle_arm_l_kg:1.95, muscle_arm_l_pct:81, muscle_arm_l_score:54,
   muscle_arm_r_kg:2.05, muscle_arm_r_pct:85, muscle_arm_r_score:59,
@@ -283,8 +287,8 @@ function page1(d){
   html+='<div class="st-dot">Masa grasa<\/div>';
   html+='<div style="display:grid;grid-template-columns:50% 15% 35%;gap:8px;align-items:stretch">';
   html+='<div>'
-    +mkBar('Cantidad',fm.toFixed(2),50,'kg',d.fat_label,null,null,'Normal 40-49')
-    +mkBar('% del peso',d.body_fat_pct,54,'%',d.fat_label,23,35,'23–35%')
+    +mkBar('Cantidad',fm.toFixed(2),50,'kg',d.fat_label,null,null,d.fat_ref_age_label)
+    +mkBar('% del peso',d.body_fat_pct,54,'%',d.fat_label,d.fat_ref_normal_min,d.fat_ref_normal_max,d.fat_ref_normal_min+'–'+d.fat_ref_normal_max+'% · '+d.fat_ref_age_label)
     +'<div class="st" style="margin-top:7px">Análisis Músculo–Grasa<\/div>'
     +'<div class="three">'
     +'<div class="sc"><div class="sc-lbl">Peso (kg)<\/div><div class="sc-val">'+f(d.weight_kg)+'<\/div><\/div>'
@@ -317,11 +321,11 @@ function page1(d){
   html+='<div style="margin-top:5px;font-size:8.5px;color:var(--ink-lt);border:0.5px solid var(--border);border-radius:4px;padding:4px 8px"><strong>Peso total:<\/strong> '+f(d.weight_kg)+' kg &nbsp;<span style="color:var(--green);font-weight:600">Normal<\/span><\/div>';
   html+='<div class="st">Grasa Segmental — % real<\/div>';
   html+='<table class="sgt"><thead><tr><th>Segmento<\/th><th>% real<\/th><th>Clasificación<\/th><th>Referencia / Ideal<\/th><\/tr><\/thead><tbody>';
-  html+=srow('Tronco',d.fat_trunk_pct,d.fat_trunk_label,'ref 20–28% · ideal 24%');
-  html+=srow('Brazo izq.',d.fat_arm_l_pct,d.fat_arm_l_label,'ref 23–33% · ideal 28%');
-  html+=srow('Brazo der.',d.fat_arm_r_pct,d.fat_arm_r_label,'ref 23–33% · ideal 28%');
-  html+=srow('Pierna izq.',d.fat_leg_l_pct,d.fat_leg_l_label,'ref 26–38% · ideal 32%');
-  html+=srow('Pierna der.',d.fat_leg_r_pct,d.fat_leg_r_label,'ref 26–38% · ideal 32%');
+  html+=srow('Tronco',d.fat_trunk_pct,d.fat_trunk_label,'ref '+d.fat_trunk_ref_min+'–'+d.fat_trunk_ref_max+'% · ideal '+d.fat_trunk_ref_ideal+'%');
+  html+=srow('Brazo izq.',d.fat_arm_l_pct,d.fat_arm_l_label,'ref '+d.fat_arm_ref_min+'–'+d.fat_arm_ref_max+'% · ideal '+d.fat_arm_ref_ideal+'%');
+  html+=srow('Brazo der.',d.fat_arm_r_pct,d.fat_arm_r_label,'ref '+d.fat_arm_ref_min+'–'+d.fat_arm_ref_max+'% · ideal '+d.fat_arm_ref_ideal+'%');
+  html+=srow('Pierna izq.',d.fat_leg_l_pct,d.fat_leg_l_label,'ref '+d.fat_leg_ref_min+'–'+d.fat_leg_ref_max+'% · ideal '+d.fat_leg_ref_ideal+'%');
+  html+=srow('Pierna der.',d.fat_leg_r_pct,d.fat_leg_r_label,'ref '+d.fat_leg_ref_min+'–'+d.fat_leg_ref_max+'% · ideal '+d.fat_leg_ref_ideal+'%');
   html+='<\/tbody><\/table>';
   html+='<div class="pfooter"><span>SmartBioScan · Reporte de Composición Corporal<\/span><span>'+d.full_name+' · '+d.measurement_date+'<\/span><span>Página 1 de 3<\/span><\/div>';
   html+='<\/div>';
