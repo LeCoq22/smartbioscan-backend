@@ -368,7 +368,7 @@ def compute_protein(m: TanitaMeasurement, sex: str) -> dict:
     mass_fat_kg = round(m.weight_kg * m.body_fat_pct / 100, 2)
     mlg_kg      = round(m.weight_kg - mass_fat_kg, 2)
     protein_kg  = round(mlg_kg * 0.20, 2)
-    protein_pct = round(protein_kg / m.weight_kg * 100, 1)
+    protein_pct = round(protein_kg / m.weight_kg * 100, 1) if m.weight_kg > 0 else 0.0
 
     refs    = get_protein_references(sex)
     pct_cat = classify_range(protein_pct, refs['pct_normal'])
@@ -394,7 +394,7 @@ def compute_protein(m: TanitaMeasurement, sex: str) -> dict:
 
 def compute_bone(m: TanitaMeasurement, patient: PatientInfo) -> dict:
     """Masa ósea con referencia por sexo y edad."""
-    bone_pct = round(m.bone_mass_kg / m.weight_kg * 100, 2)
+    bone_pct = round(m.bone_mass_kg / m.weight_kg * 100, 2) if m.weight_kg > 0 else 0.0
     refs = get_bone_mass_references(patient.sex, patient.age)
 
     kg_cat  = classify_range(m.bone_mass_kg, refs['kg_range'],
@@ -481,8 +481,8 @@ def compute_muscle(m: TanitaMeasurement, patient: PatientInfo) -> dict:
     factor = imme_refs['conversion_factor']
     height_m = patient.height_cm / 100
 
-    mme_kg = round(m.muscle_mass_kg / factor, 1)
-    imme = round(mme_kg / (height_m ** 2), 2)
+    mme_kg = round(m.muscle_mass_kg / factor, 1) if factor > 0 else 0.0
+    imme = round(mme_kg / (height_m ** 2), 2) if height_m > 0 else 0.0
 
     # Rango MME (±6%)
     mme_low  = round(mme_kg * 0.94, 1)
@@ -653,7 +653,7 @@ def compute_weight_control(m: TanitaMeasurement, patient: PatientInfo,
     projected_weight = round(mlg_kg + target_muscle_gain + fat_kg * (1 - 0.0), 2)
     # Si gana músculo manteniendo grasa:
     projected_weight_v2 = round(mlg_kg + target_muscle_gain + fat_kg, 2)
-    projected_fat_pct = round(fat_kg / projected_weight_v2 * 100, 1)
+    projected_fat_pct = round(fat_kg / projected_weight_v2 * 100, 1) if projected_weight_v2 > 0 else 0.0
     projected_muscle_kg = round(m.muscle_mass_kg + target_muscle_gain, 1)
 
     # Estado actual de grasa

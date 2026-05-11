@@ -449,7 +449,13 @@ async def generate_report(
             measurement_date = body.measurement_date,
             use_db           = True,
         )
+    except HTTPException:
+        raise
     except Exception as e:
+        _logger.exception(
+            "Error generando reporte | patient_id=%s | measurement_date=%s",
+            body.patient_id, body.measurement_date,
+        )
         raise HTTPException(status_code=500, detail=str(e))
 
     elapsed = round(time.time() - t0, 1)

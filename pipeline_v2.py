@@ -18,9 +18,12 @@ Modos de uso:
      python3 pipeline_v2.py --nutri-id <uuid> --batch
 """
 
-import asyncio, argparse, sys, os, tempfile, time
+import asyncio, argparse, logging, sys, os, tempfile, time
 from datetime import datetime, date
 from dotenv import load_dotenv
+from fastapi import HTTPException
+
+_logger = logging.getLogger("smartbioscan.pipeline")
 
 load_dotenv()
 
@@ -29,6 +32,18 @@ sys.path.insert(0, os.path.dirname(__file__))
 from analysis_engine import PatientInfo, analyze
 from csv_parser import load_csv
 from pdf_generator_v2 import generate_html_v2 as generate_html
+
+
+def _measurement_is_complete_enough(m) -> tuple[bool, list[str]]:
+    """Devuelve (True, []) si la medición tiene los campos mínimos para analizar."""
+    required = {
+        "weight_kg":      m.weight_kg,
+        "body_fat_pct":   m.body_fat_pct,
+        "muscle_mass_kg": m.muscle_mass_kg,
+        "bmr_kcal":       m.bmr_kcal,
+    }
+    missing = [k for k, v in required.items() if not v or v <= 0]
+    return (len(missing) == 0, missing)
 
 
 # ─────────────────────────────────────────────
@@ -361,6 +376,25 @@ async def run_pipeline(
             result['skipped'] = True
             return result
 
+    latest = measurements[-1]
+    ok, missing = _measurement_is_complete_enough(latest)
+    if not ok:
+        print(f"[Pipeline] ✗ Medición incompleta — campos faltantes: {missing}")
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "measurement_incomplete",
+                "missing_fields": missing,
+                "message": (
+                    "Esta medición tiene campos vacíos en MyTanita "
+                    f"({', '.join(missing)}) y no puede analizarse. "
+                    "Esto suele pasar con mediciones tomadas con básculas Tanita "
+                    "más simples que el modelo RD-545. "
+                    "Probá con otra medición del mismo paciente."
+                ),
+            },
+        )
+
     analysis = analyze(patient, measurements)
 
     # ── HTML ──────────────────────────────────
@@ -433,6 +467,7 @@ async def run_pipeline(
                 pass
 
         except Exception as e:
+            _logger.exception("[Pipeline] Error Supabase al guardar reporte (PDF generado igual)")
             print(f"[Pipeline] ~ Error Supabase (PDF generado igual): {e}")
 
     elapsed = round(time.time() - t_start, 1)
