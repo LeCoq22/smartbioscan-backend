@@ -273,8 +273,8 @@ function page1(d){
   html+='<div class="st">Parámetros clave<\/div>';
   html+='<div class="kpg">'
     +'<div class="kpc"><div class="kpc-lbl">TMB<\/div><div class="kpc-val">'+fi(d.bmr_kcal)+'<\/div><div class="kpc-unit">kcal / día<\/div><\/div>'
-    +'<div class="kpc"><div class="kpc-lbl">Grasa visceral<\/div><div class="kpc-val" style="color:'+(parseInt(d.visceral_fat)<=12?'var(--green)':'var(--orange)')+'">'+fi(d.visceral_fat)+'<\/div>'
-      +'<span class="b '+(parseInt(d.visceral_fat)<=12?'b-g':'b-o')+'">'+(parseInt(d.visceral_fat)<=12?'Saludable':'Levemente alto')+'<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">Grasa visceral<\/div><div class="kpc-val" style="color:'+(Math.round(parseFloat(d.visceral_fat))<=12?'var(--green)':(Math.round(parseFloat(d.visceral_fat))<=19?'var(--orange)':'var(--red)'))+'">'+fi(d.visceral_fat)+'<\/div>'
+      +'<span class="b '+(Math.round(parseFloat(d.visceral_fat))<=12?'b-g':(Math.round(parseFloat(d.visceral_fat))<=19?'b-o':'b-r'))+'">'+(Math.round(parseFloat(d.visceral_fat))<=12?'Saludable':(Math.round(parseFloat(d.visceral_fat))<=19?'Levemente alto':'Alto'))+'<\/span><\/div>'
     +'<div class="kpc"><div class="kpc-lbl">Edad metabólica<\/div><div class="kpc-val">'+fi(d.metabolic_age)+'<\/div>'
       +'<div class="kpc-unit">años'+(d.metabolic_age&&d.age?' <span style="color:'+(parseFloat(d.metabolic_age)<parseFloat(d.age)?'var(--green)':'var(--orange)')+'">('+(parseFloat(d.metabolic_age)-parseFloat(d.age)>0?'+':'')+f(parseFloat(d.metabolic_age)-parseFloat(d.age),0)+' vs cronológica)<\/span>':'')+'<\/div><\/div>'
     +'<div class="kpc"><div class="kpc-lbl">% Grasa global<\/div><div class="kpc-val">'+f(d.body_fat_pct)+'<span style="font-size:12px;font-weight:400">%<\/span><\/div>'
@@ -296,8 +296,8 @@ function page1(d){
     +'<div class="sc"><div class="sc-lbl">Masa grasa (kg)<\/div><div class="sc-val">'+f(fm)+'<\/div><\/div>'
     +'<\/div>'
     +'<\/div>';
-  var viscBadge=parseInt(d.visceral_fat)<=12?'b-g':(parseInt(d.visceral_fat)<=19?'b-o':'b-r');
-  var viscLabel=parseInt(d.visceral_fat)<=12?'Saludable':(parseInt(d.visceral_fat)<=19?'Levemente alto':'Alto');
+  var viscBadge=Math.round(parseFloat(d.visceral_fat))<=12?'b-g':(Math.round(parseFloat(d.visceral_fat))<=19?'b-o':'b-r');
+  var viscLabel=Math.round(parseFloat(d.visceral_fat))<=12?'Saludable':(Math.round(parseFloat(d.visceral_fat))<=19?'Levemente alto':'Alto');
   html+='<div class="kpc" style="text-align:center;display:flex;flex-direction:column;justify-content:flex-start">'
     +'<div class="kpc-lbl" style="font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px">Grasa Visceral<\/div>'
     +'<div style="font-size:38px;font-weight:700;line-height:1;color:var(--ink);margin:4px 0">'+fi(d.visceral_fat)+'<\/div>'
@@ -417,11 +417,11 @@ function page3(d){
     +'<div class="rh-r"><div class="pname">'+d.full_name+'<\/div><div class="pdate">'+d.measurement_date+'<\/div><\/div><\/div>';
   html+='<div class="st-dot">Agua corporal total<\/div>';
   html+='<div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">';
-  html+='<div>'+mkBar('Cantidad total (ACT)',d.total_body_water_l,60,'L','Normal')+mkBar('Porcentaje corporal',d.tbw_pct,72,'%','Normal')+'<\/div>';
+  html+='<div>'+mkBar('Cantidad total (ACT)',d.total_body_water_l,60,'L',d.tbw_kg_label||'Normal',d.tbw_kg_min,d.tbw_kg_max,(d.tbw_kg_min&&d.tbw_kg_max?d.tbw_kg_min+'–'+d.tbw_kg_max+' kg':''))+mkBar('Porcentaje corporal',d.tbw_pct,72,'%',d.tbw_pct_label||'Normal',d.tbw_pct_min,d.tbw_pct_max,(d.tbw_pct_min&&d.tbw_pct_max?d.tbw_pct_min+'–'+d.tbw_pct_max+'%':''))+'<\/div>';
   html+='<div class="sc" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">'
     +'<div class="sc-lbl">ACT<\/div>'
     +'<div style="font-size:20px;font-weight:800;color:#2563eb;line-height:1">'+f(d.tbw_pct)+'%<\/div>'
-    +'<span class="b b-g" style="margin-top:3px">Normal<\/span>'
+    +'<span class="b '+(bc(d.tbw_pct_label||'Normal'))+'" style="margin-top:3px">'+(d.tbw_pct_label||'Normal')+'<\/span>'
     +'<div style="font-size:8px;color:var(--ink-lt);margin-top:2px">'+f(d.total_body_water_l)+' L<\/div>'
     +'<\/div>';
   html+='<\/div>';
@@ -451,25 +451,6 @@ function page3(d){
     +'<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v">'+f(d.weight_kg)+' kg<\/span><\/div>'
     +'<div class="trow"><span class="tr-l">MLG<\/span><span class="tr-v">'+mlg+' kg<\/span><\/div>'
     +'<div class="trow"><span class="tr-l">Masa grasa<\/span><span class="tr-v">'+fmkg+' kg ('+f(d.body_fat_pct)+'%)<\/span><\/div>'
-    +'<\/div>'
-    +'<div style="border:0.5px solid var(--border);border-radius:4px;border-left:3px solid var(--green);padding:6px 8px;margin-bottom:6px;font-size:10px">'
-    +'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'
-    +'<div style="font-size:9px;font-weight:600">Estado actual<\/div>'
-    +'<span class="b b-g">Mantener peso<\/span>'
-    +'<\/div>'
-    +'<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:0.5px solid #f3f4f6"><span style="color:var(--ink-mid);font-size:9px">% grasa actual<\/span><span style="font-weight:500;font-size:9px">'+f(d.body_fat_pct)+'% <span class="b '+bc(d.fat_label||'')+'" style="font-size:7px">'+(d.fat_label||'')+'<\/span><\/span><\/div>'
-    +'<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:0.5px solid #f3f4f6"><span style="color:var(--ink-mid);font-size:9px">Rango fitness 40–49<\/span><span style="font-weight:500;font-size:9px">18–24%<\/span><\/div>'
-    +'<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--ink-mid);font-size:9px">Recomendación<\/span><span style="font-weight:500;font-size:9px">Mantener peso<\/span><\/div>'
-    +'<\/div>'
-    +'<div style="border:0.5px solid var(--border);border-radius:4px;border-left:3px solid var(--blue);padding:6px 8px;font-size:10px">'
-    +'<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">'
-    +'<div style="font-size:9px;font-weight:600">Ganancia muscular<\/div>'
-    +'<span class="b b-b">+2 kg músculo<\/span>'
-    +'<\/div>'
-    +'<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:0.5px solid #f3f4f6"><span style="color:var(--ink-mid);font-size:9px">Peso proyectado<\/span><span style="font-weight:500;font-size:9px">'+f(parseFloat(d.weight_kg)+2)+' kg <span style="color:var(--green);font-size:8px">+2.0 kg<\/span><\/span><\/div>'
-    +'<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:0.5px solid #f3f4f6"><span style="color:var(--ink-mid);font-size:9px">% grasa resultante<\/span><span style="font-weight:500;font-size:9px">'+f(parseFloat(d.body_fat_pct)/100*parseFloat(d.weight_kg)/(parseFloat(d.weight_kg)+2)*100)+'%<\/span><\/div>'
-    +'<div style="display:flex;justify-content:space-between;padding:2px 0"><span style="color:var(--ink-mid);font-size:9px">Masa muscular<\/span><span style="font-weight:500;font-size:9px">'+f(parseFloat(d.muscle_mass_kg)+2)+' kg <span style="color:var(--green);font-size:8px">+2.0 kg<\/span><\/span><\/div>'
-    +'<\/div>'
     +'<\/div>';
   html+='<div>'
     +'<div class="tbox" style="margin-bottom:5px"><div class="tbox-t">Tendencia '+(d.trend_from||'')+' → '+(d.trend_to||'')+'<\/div>'
