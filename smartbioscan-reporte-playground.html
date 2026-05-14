@@ -445,23 +445,36 @@ function page3(d){
     +'<div style="display:flex;justify-content:space-between;margin-top:3px;font-size:7.5px;color:var(--ink-lt)"><span>0.4 ↓ deshidratación<\/span><span>±10–15%<\/span><span style="color:var(--orange)">0.65 ↑ retención<\/span><\/div>'
     +'<\/div>';
   html+='<div class="st">Control de peso y evolución<\/div>';
-  html+='<div class="two" style="margin-bottom:8px">';
-  html+='<div>'
-    +'<div class="tbox" style="margin-bottom:5px"><div class="tbox-t">Control de peso por composición<\/div>'
-    +'<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v">'+f(d.weight_kg)+' kg<\/span><\/div>'
-    +'<div class="trow"><span class="tr-l">MLG<\/span><span class="tr-v">'+mlg+' kg<\/span><\/div>'
-    +'<div class="trow"><span class="tr-l">Masa grasa<\/span><span class="tr-v">'+fmkg+' kg ('+f(d.body_fat_pct)+'%)<\/span><\/div>'
-    +'<\/div>';
-  html+='<div>'
-    +'<div class="tbox" style="margin-bottom:5px"><div class="tbox-t">Tendencia '+(d.trend_from||'')+' → '+(d.trend_to||'')+'<\/div>'
-    +(dw!=null?'<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v '+tc(dw)+'">'+arr(dw)+' '+delt(dw)+' kg<\/span><\/div>':'')
-    +(dm!=null?'<div class="trow"><span class="tr-l">Masa muscular<\/span><span class="tr-v '+tc(dm)+'">'+arr(dm)+' '+delt(dm)+' kg<\/span><\/div>':'')
-    +(df!=null?'<div class="trow"><span class="tr-l">% grasa<\/span><span class="tr-v '+(parseFloat(df)<0?'up':'dn')+'">'+arr(-parseFloat(df))+' '+delt(df)+'%<\/span><\/div>':'')
-    +(db!=null?'<div class="trow"><span class="tr-l">TMB<\/span><span class="tr-v '+tc(db)+'">'+arr(db)+' '+delt(db,0)+' kcal<\/span><\/div>':'')
-    +'<\/div>'
-    +'<div id="chart-slot"><\/div>'
-    +'<\/div>';
-  html+='<\/div>';
+  var hasPrev=(dw!=null)||(dm!=null)||(df!=null)||(db!=null);
+  if(hasPrev){
+    html+='<div class="two" style="margin-bottom:8px">';
+    html+='<div>'
+      +'<div class="tbox" style="margin-bottom:5px"><div class="tbox-t">Control de peso por composición<\/div>'
+      +'<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v">'+f(d.weight_kg)+' kg<\/span><\/div>'
+      +'<div class="trow"><span class="tr-l">MLG<\/span><span class="tr-v">'+mlg+' kg<\/span><\/div>'
+      +'<div class="trow"><span class="tr-l">Masa grasa<\/span><span class="tr-v">'+fmkg+' kg ('+f(d.body_fat_pct)+'%)<\/span><\/div>'
+      +'<\/div>'
+      +'<\/div>';
+    html+='<div>'
+      +'<div class="tbox" style="margin-bottom:5px"><div class="tbox-t">Tendencia '+(d.trend_from||'')+' → '+(d.trend_to||'')+'<\/div>'
+      +(dw!=null?'<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v '+tc(dw)+'">'+arr(dw)+' '+delt(dw)+' kg<\/span><\/div>':'')
+      +(dm!=null?'<div class="trow"><span class="tr-l">Masa muscular<\/span><span class="tr-v '+tc(dm)+'">'+arr(dm)+' '+delt(dm)+' kg<\/span><\/div>':'')
+      +(df!=null?'<div class="trow"><span class="tr-l">% grasa<\/span><span class="tr-v '+(parseFloat(df)<0?'up':'dn')+'">'+arr(-parseFloat(df))+' '+delt(df)+'%<\/span><\/div>':'')
+      +(db!=null?'<div class="trow"><span class="tr-l">TMB<\/span><span class="tr-v '+tc(db)+'">'+arr(db)+' '+delt(db,0)+' kcal<\/span><\/div>':'')
+      +'<\/div>'
+      +'<div id="chart-slot"><\/div>'
+      +'<\/div>';
+    html+='<\/div>';
+  } else {
+    html+='<div style="margin-bottom:8px">'
+      +'<div class="tbox"><div class="tbox-t">Control de peso por composición<\/div>'
+      +'<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v">'+f(d.weight_kg)+' kg<\/span><\/div>'
+      +'<div class="trow"><span class="tr-l">MLG<\/span><span class="tr-v">'+mlg+' kg<\/span><\/div>'
+      +'<div class="trow"><span class="tr-l">Masa grasa<\/span><span class="tr-v">'+fmkg+' kg ('+f(d.body_fat_pct)+'%)<\/span><\/div>'
+      +'<div style="font-size:8.5px;color:var(--ink-lt);margin-top:6px;padding-top:5px;border-top:0.5px solid var(--border)">Primera medición registrada. Las comparaciones de evolución aparecerán a partir de la próxima medición.<\/div>'
+      +'<\/div>'
+      +'<\/div>';
+  }
   html+='<div class="st">Referencias científicas<\/div>';
   html+='<div style="font-size:7.5px;color:var(--ink-lt);line-height:1.7;column-count:2;column-gap:14px">'
     +'<strong>Agua corporal<\/strong> [1] Watson PE et al. Am J Clin Nutr. 1980. [2] Chumlea WC et al. Kidney Int. 2001. [14] De Lorenzo A et al. J Appl Physiol. 1997. [15] Kyle UG et al. ESPEN. Clin Nutr. 2004.<br>'

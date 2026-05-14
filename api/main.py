@@ -391,6 +391,13 @@ async def get_admin_nutri(
 
 
 # ─────────────────────────────────────────────
+# Admin: regeneración de reportes (módulo separado)
+# ─────────────────────────────────────────────
+from api.admin_regenerate import register_routes as _register_admin_regen_routes
+_register_admin_regen_routes(app, get_admin_nutri)
+
+
+# ─────────────────────────────────────────────
 # RATE LIMITER (in-memory, sin dependencias extra)
 # ─────────────────────────────────────────────
 
