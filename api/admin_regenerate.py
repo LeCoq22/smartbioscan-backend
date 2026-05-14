@@ -251,6 +251,86 @@ class RegenerateBatchResponse(BaseModel):
 
 
 # ─────────────────────────────────────────────
+# Jobs in-memory (para batches asíncronos)
+# ─────────────────────────────────────────────
+# OJO: storage en proceso. Si Railway escala a múltiples replicas no se
+# comparte entre instancias. Para nuestro caso (admin solo, batches puntuales)
+# es suficiente. Migrar a Redis/Postgres si se vuelve crítico.
+import asyncio
+import uuid
+from datetime import datetime, timezone
+
+_jobs: dict = {}
+_jobs_lock = asyncio.Lock()
+
+
+def _new_job(initiator: str, kind: str, total: int, params: dict) -> str:
+    """Crea entrada de job y retorna su id."""
+    job_id = str(uuid.uuid4())
+    _jobs[job_id] = {
+        'id': job_id,
+        'kind': kind,
+        'initiator': initiator,
+        'params': params,
+        'status': 'running',           # running | done | error
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'finished_at': None,
+        'total': total,
+        'processed': 0,
+        'ok': 0,
+        'failed': 0,
+        'errors': [],                  # list of {report_id, error}
+        'last_error': None,
+    }
+    return job_id
+
+
+async def _run_regenerate_batch_job(job_id: str, reports: list, dry_run: bool):
+    """Procesa el batch en background y actualiza el estado del job."""
+    job = _jobs[job_id]
+    from db import DB
+    db = DB()
+
+    try:
+        for row in reports:
+            try:
+                r = await _regenerate_one(db, row, dry_run)
+                if r.get('ok'):
+                    job['ok'] += 1
+                else:
+                    job['failed'] += 1
+                    job['errors'].append({
+                        'report_id': r.get('report_id'),
+                        'nutri_id': r.get('nutri_id'),
+                        'error': r.get('error'),
+                    })
+                    job['last_error'] = r.get('error')
+            except Exception as e:
+                job['failed'] += 1
+                job['errors'].append({
+                    'report_id': row.get('id'),
+                    'nutri_id': row.get('nutri_id'),
+                    'error': f'exception: {e}',
+                })
+                job['last_error'] = str(e)
+            finally:
+                job['processed'] += 1
+
+        job['status'] = 'done'
+    except Exception as e:
+        # Error catastrófico que rompió todo el loop
+        job['status'] = 'error'
+        job['last_error'] = f'fatal: {e}'
+        _logger.exception("admin_regenerate_batch_async job=%s fatal", job_id)
+    finally:
+        job['finished_at'] = datetime.now(timezone.utc).isoformat()
+        _logger.info(
+            "admin_regenerate_batch_async job=%s done status=%s total=%d ok=%d failed=%d",
+            job_id, job['status'], job['total'], job['ok'], job['failed'],
+        )
+
+
+# ─────────────────────────────────────────────
 # Endpoints
 # ─────────────────────────────────────────────
 
@@ -387,4 +467,116 @@ def register_routes(app, get_admin_dependency):
             results=results,
         )
 
+    @router.post("/regenerate-batch-async")
+    async def regenerate_batch_async(
+        body: RegenerateBatchRequest,
+        admin_id: str = Depends(get_admin_dependency),
+    ):
+        """
+        Versión asíncrona del batch: arranca el procesamiento en background
+        y retorna inmediatamente con un job_id para consultar progreso.
+        Usar GET /admin/jobs/{job_id} para polling.
+
+        Útil cuando el batch supera el timeout del cliente (CDP 45s,
+        navegadores, proxies). El backend procesa hasta que termina,
+        sin importar si el cliente sigue conectado.
+        """
+        from db import DB
+        db = DB()
+
+        q = (db.client.table('reports')
+             .select('id, nutri_id, patient_id, measurement_date, csv_raw'))
+
+        if body.nutri_id:
+            q = q.eq('nutri_id', body.nutri_id)
+
+        q = q.order('generated_at', desc=False)
+        if body.limit:
+            q = q.limit(body.limit)
+
+        res = q.execute()
+        reports = res.data or []
+
+        job_id = _new_job(
+            initiator=admin_id,
+            kind='regenerate_batch',
+            total=len(reports),
+            params={
+                'dry_run': body.dry_run,
+                'nutri_id': body.nutri_id,
+                'limit': body.limit,
+            },
+        )
+
+        # Lanzar en background — no esperamos
+        asyncio.create_task(_run_regenerate_batch_job(job_id, reports, body.dry_run))
+
+        _logger.info(
+            "admin_regenerate_batch_async START job=%s admin=%s total=%d dry_run=%s nutri_filter=%s",
+            job_id, admin_id, len(reports), body.dry_run, body.nutri_id,
+        )
+
+        return {
+            'job_id': job_id,
+            'total': len(reports),
+            'status': 'running',
+            'poll_url': f'/admin/jobs/{job_id}',
+        }
+
     app.include_router(router)
+
+    # Endpoint de status para los jobs (fuera del router /admin/reports
+    # para que sea /admin/jobs/{id} y no /admin/reports/jobs/{id})
+    @app.get("/admin/jobs/{job_id}")
+    async def get_job_status(
+        job_id: str,
+        admin_id: str = Depends(get_admin_dependency),
+    ):
+        """Devuelve el estado actual de un job de regeneración."""
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job no encontrado")
+
+        # No devolver toda la lista de errores si es enorme — recortar a 50
+        errors_preview = job['errors'][:50] if len(job['errors']) > 50 else job['errors']
+
+        return {
+            'id': job['id'],
+            'kind': job['kind'],
+            'status': job['status'],
+            'created_at': job['created_at'],
+            'finished_at': job['finished_at'],
+            'total': job['total'],
+            'processed': job['processed'],
+            'ok': job['ok'],
+            'failed': job['failed'],
+            'last_error': job['last_error'],
+            'errors_count': len(job['errors']),
+            'errors_preview': errors_preview,
+            'params': job['params'],
+        }
+
+    @app.get("/admin/jobs")
+    async def list_jobs(
+        admin_id: str = Depends(get_admin_dependency),
+    ):
+        """Lista los últimos 50 jobs (sin payload de errores completo)."""
+        sorted_jobs = sorted(
+            _jobs.values(),
+            key=lambda j: j['created_at'],
+            reverse=True,
+        )[:50]
+        return [
+            {
+                'id': j['id'],
+                'kind': j['kind'],
+                'status': j['status'],
+                'created_at': j['created_at'],
+                'finished_at': j['finished_at'],
+                'total': j['total'],
+                'processed': j['processed'],
+                'ok': j['ok'],
+                'failed': j['failed'],
+            }
+            for j in sorted_jobs
+        ]
