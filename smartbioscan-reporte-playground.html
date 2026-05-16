@@ -196,10 +196,11 @@ function fi(v){return (v!=null&&v!=='')?(Math.round(parseFloat(v)))+'':'—';}
 function pct(v,max){return Math.min(100,parseFloat(v)/parseFloat(max)*100);}
 function bc(lbl){
   var l=(lbl||'').toLowerCase();
-  if(l.indexOf('atlét')>=0||l.indexOf('fitness')>=0||l.indexOf('excelente')>=0||l.indexOf('saludable')>=0||l.indexOf('bueno')>=0) return 'b-g';
+  if(l.indexOf('sin sarcopenia')>=0||l.indexOf('atlét')>=0||l.indexOf('fitness')>=0||l.indexOf('excelente')>=0||l.indexOf('saludable')>=0||l.indexOf('bueno')>=0) return 'b-g';
   if(l.indexOf('normal')>=0) return 'b-b';
+  if(l.indexOf('bajo')>=0||l.indexOf('baja')>=0||l.indexOf('riesgo')>=0||l.indexOf('sarcopenia')>=0) return 'b-r';
+  if(l.indexOf('↑')>=0||l.indexOf('alta')>=0||l.indexOf('alto')>=0||l.indexOf('elevad')>=0) return 'b-o';
   if(l.indexOf('leve')>=0||l.indexOf('moderado')>=0) return 'b-o';
-  if(l.indexOf('riesgo')>=0||l.indexOf('sarcopenia')>=0) return 'b-r';
   return 'b-t';
 }
 function bcolor(lbl){
@@ -241,13 +242,14 @@ function srow(lbl,pct_v,badge,ref){
     +'<td style="font-size:8.5px;color:var(--ink-lt)">'+ref+'<\/td><\/tr>';
 }
 
-// ── Muscular segmental row — Cantidad (kg) + Rango normal
-function mrow(lbl,kg,rangeKg,score,classif,ref){
+// ── Muscular segmental row — Cantidad + Clasif. cantidad + Score + Clasif. score
+function mrow(lbl,kg,rangeKg,kgClassif,score,classif,ref){
   return '<tr><td>'+lbl+'<\/td>'
-    +'<td>'+(kg!=null?f(kg)+' kg':'—')+'<\/td>'
+    +'<td>'+(kg!=null?f(kg):'—')+'<\/td>'
     +'<td style="font-size:8.5px;color:var(--ink-lt)">'+(rangeKg||'—')+'<\/td>'
+    +'<td>'+(kgClassif?'<span class="b '+bc(kgClassif)+'">'+kgClassif+'<\/span>':'—')+'<\/td>'
     +'<td>'+(score||'—')+'<\/td>'
-    +'<td>'+(classif?'<span class="b '+(classif.indexOf('Norm')>=0?'b-g':'b-t')+'">'+classif+'<\/span>':'—')+'<\/td>'
+    +'<td>'+(classif?'<span class="b '+bc(classif)+'">'+classif+'<\/span>':'—')+'<\/td>'
     +'<td style="font-size:8.5px;color:var(--ink-lt)">'+(ref!='—'?'score ('+ref+')':ref)+'<\/td><\/tr>';
 }
 
@@ -353,18 +355,21 @@ function page2(d){
     +'<div style="display:flex;justify-content:space-between;font-size:7.5px;color:var(--ink-lt)"><span>Sarcopenia &lt;6.0<\/span><span>±5–6%<\/span><span>Normal ≥7.0 kg/m²<\/span><\/div>'
     +'<\/div>';
   html+='<div class="st">Masa Muscular Segmental — Cantidad y Calidad<\/div>';
-  html+='<div style="font-size:8.5px;color:var(--ink-lt);margin-bottom:4px">Score calidad normal 40–49: 42–67 · tronco: sin dato Tanita<\/div>';
+  var mqRefStr=(d.mq_ref_min!=null&&d.mq_ref_max!=null)?(d.mq_ref_min+'–'+d.mq_ref_max):'42–67';
+  html+='<div style="font-size:8.5px;color:var(--ink-lt);margin-bottom:4px">Score calidad normal '+(d.age||'')+'a '+(d.sex||'').toLowerCase().charAt(0).toUpperCase()+': '+mqRefStr+' · tronco: sin dato Tanita<\/div>';
   var hf=parseFloat(d.height_cm)/158;
   var isFem=(d.sex||'').toLowerCase().indexOf('f')>=0;
   var idealArm=parseFloat(isFem?2.20:3.50)*hf;
   var idealLeg=parseFloat(isFem?7.50:10.0)*hf;
   function rangeKg(ideal){return f(ideal*0.8,1)+'–'+f(ideal*1.2,1)+' kg';}
-  html+='<table class="sgt"><thead><tr><th>Segmento<\/th><th>Cantidad (kg)<\/th><th>Rango normal<\/th><th>Score calidad<\/th><th>Clasificación<\/th><th>Ref.<\/th><\/tr><\/thead><tbody>';
-  html+=mrow('Tronco',d.muscle_trunk_kg,'—',null,null,'—');
-  html+=mrow('Brazo izq.',d.muscle_arm_l_kg,rangeKg(idealArm),d.muscle_arm_l_score,'Normal','42–67');
-  html+=mrow('Brazo der.',d.muscle_arm_r_kg,rangeKg(idealArm),d.muscle_arm_r_score,'Normal','42–67');
-  html+=mrow('Pierna izq.',d.muscle_leg_l_kg,rangeKg(idealLeg),d.muscle_leg_l_score,'↑ Norm','42–67');
-  html+=mrow('Pierna der.',d.muscle_leg_r_kg,rangeKg(idealLeg),d.muscle_leg_r_score,'↑ Norm','42–67');
+  // Etiqueta compacta para la columna Clasificación (el backend ya manda Bajo/Normal/Alto)
+  function mqShort(cat){ return cat || '—'; }
+  html+='<table class="sgt"><thead><tr><th>Segmento<\/th><th>Cantidad<\/th><th>Rango ideal<\/th><th>Clasif. cantidad<\/th><th>Score<\/th><th>Clasif. score<\/th><th>Ref. score<\/th><\/tr><\/thead><tbody>';
+  html+=mrow('Tronco',d.muscle_trunk_kg,'—',null,null,null,'—');
+  html+=mrow('Brazo izq.',d.muscle_arm_l_kg,rangeKg(idealArm),mqShort(d.muscle_arm_l_kgcat),d.muscle_arm_l_score,mqShort(d.muscle_arm_l_cat),mqRefStr);
+  html+=mrow('Brazo der.',d.muscle_arm_r_kg,rangeKg(idealArm),mqShort(d.muscle_arm_r_kgcat),d.muscle_arm_r_score,mqShort(d.muscle_arm_r_cat),mqRefStr);
+  html+=mrow('Pierna izq.',d.muscle_leg_l_kg,rangeKg(idealLeg),mqShort(d.muscle_leg_l_kgcat),d.muscle_leg_l_score,mqShort(d.muscle_leg_l_cat),mqRefStr);
+  html+=mrow('Pierna der.',d.muscle_leg_r_kg,rangeKg(idealLeg),mqShort(d.muscle_leg_r_kgcat),d.muscle_leg_r_score,mqShort(d.muscle_leg_r_cat),mqRefStr);
   html+='<\/tbody><\/table>';
   html+='<div style="display:flex;justify-content:space-between;align-items:center;background:var(--teal-dim);border:1px solid #99d6d8;border-radius:6px;padding:6px 10px;margin-bottom:8px">'
     +'<span style="font-size:10px;font-weight:700;color:var(--teal)">Calidad Muscular Total (MQ)<\/span>'
@@ -374,16 +379,16 @@ function page2(d){
   html+='<div class="two">';
   html+='<div><div style="font-size:9.5px;font-weight:600;color:var(--ink-mid);margin-bottom:5px">Balance de masa muscular<\/div>'
     +'<div class="four">'
-    +'<div class="sc"><div class="sc-lbl">Brazo izq.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_arm_l_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><div class="sc-sub">Δ'+f(d.balance_arm_pct)+'% Normal<\/div><\/div>'
+    +'<div class="sc"><div class="sc-lbl">Brazo izq.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_arm_l_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><div class="sc-sub">Δ'+f(d.balance_arm_pct)+'% '+(Math.abs(parseFloat(d.balance_arm_pct||0))<=10?'Normal':'Asimetría')+'<\/div><\/div>'
     +'<div class="sc"><div class="sc-lbl">Brazo der.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_arm_r_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
-    +'<div class="sc"><div class="sc-lbl">Pierna izq.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_leg_l_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><div class="sc-sub">Δ'+f(d.balance_leg_pct)+'% Normal<\/div><\/div>'
+    +'<div class="sc"><div class="sc-lbl">Pierna izq.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_leg_l_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><div class="sc-sub">Δ'+f(d.balance_leg_pct)+'% '+(Math.abs(parseFloat(d.balance_leg_pct||0))<=10?'Normal':'Asimetría')+'<\/div><\/div>'
     +'<div class="sc"><div class="sc-lbl">Pierna der.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_leg_r_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
     +'<\/div><\/div>';
   html+='<div class="sc" style="text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">'
     +'<div class="sc-lbl">Puntuación muscular de piernas<\/div>'
     +'<div style="font-size:56px;font-weight:800;color:var(--teal);line-height:1">'+(d.leg_score||'—')+'<\/div>'
-    +'<div style="font-size:9.5px;color:var(--ink-lt)">score piernas<\/div>'
-    +'<span class="b b-g" style="margin-top:5px">↑ Alta<\/span>'
+    +'<div style="font-size:9.5px;color:var(--ink-lt)">esperado '+(d.leg_score_expected||'—')+(d.leg_score_diff_pct!=null?' · Δ '+(parseFloat(d.leg_score_diff_pct)>=0?'+':'')+f(d.leg_score_diff_pct)+'%':'')+'<\/div>'
+    +'<span class="b '+bc(d.leg_score_cat||'')+'" style="margin-top:5px">'+(d.leg_score_cat||'—')+'<\/span>'
     +'<\/div>';
   html+='<\/div>';
   html+='<div class="st">Análisis de Composición Corporal<\/div>';

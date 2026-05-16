@@ -213,32 +213,112 @@ def get_visceral_fat_labels() -> dict:
 
 def get_muscle_quality_references(sex: str, age: int) -> dict:
     """
-    Puntuación de calidad muscular (score Tanita).
-    Fuente: Tanita Corp. Manual InnerScan Dual [9]
-    Normal mujer 40-49: 42-67
+    Puntuación de calidad muscular (score Tanita) — rango "Promedio".
+    Fuente: Manual Tanita RD-545 página 26, "Tabla de interpretación
+    de la puntuación de la calidad muscular".
+
+    Mujer:
+      18-29  Promedio 48-67  (Alta ≥68, Baja ≤47)
+      30-39  Promedio 48-69  (Alta ≥70, Baja ≤47)
+      40-49  Promedio 45-68  (Alta ≥69, Baja ≤44)
+      50-59  Promedio 41-66  (Alta ≥67, Baja ≤40)
+      60-69  Promedio 34-60  (Alta ≥61, Baja ≤33)
+      70-79  Promedio 26-53  (Alta ≥54, Baja ≤25)
+      80+    Promedio 22-49  (Alta ≥50, Baja ≤21)
+
+    Hombre:
+      18-29  Promedio 49-73  (Alta ≥74, Baja ≤48)
+      30-39  Promedio 47-72  (Alta ≥73, Baja ≤46)
+      40-49  Promedio 44-69  (Alta ≥70, Baja ≤43)
+      50-59  Promedio 39-63  (Alta ≥64, Baja ≤38)
+      60-69  Promedio 33-55  (Alta ≥56, Baja ≤32)
+      70-79  Promedio 25-45  (Alta ≥46, Baja ≤24)
+      80+    Promedio 21-38  (Alta ≥39, Baja ≤20)
     """
     if sex == 'F':
         if age < 30:
-            return {'normal': (52, 75)}
+            return {'normal': (48, 67)}
         elif age < 40:
-            return {'normal': (47, 70)}
+            return {'normal': (48, 69)}
         elif age < 50:
-            return {'normal': (42, 67)}
+            return {'normal': (45, 68)}
         elif age < 60:
-            return {'normal': (38, 62)}
+            return {'normal': (41, 66)}
+        elif age < 70:
+            return {'normal': (34, 60)}
+        elif age < 80:
+            return {'normal': (26, 53)}
         else:
-            return {'normal': (33, 57)}
+            return {'normal': (22, 49)}
     else:
         if age < 30:
-            return {'normal': (60, 85)}
+            return {'normal': (49, 73)}
         elif age < 40:
-            return {'normal': (55, 80)}
+            return {'normal': (47, 72)}
         elif age < 50:
-            return {'normal': (50, 75)}
-        elif age < 60:
             return {'normal': (44, 69)}
+        elif age < 60:
+            return {'normal': (39, 63)}
+        elif age < 70:
+            return {'normal': (33, 55)}
+        elif age < 80:
+            return {'normal': (25, 45)}
         else:
-            return {'normal': (38, 63)}
+            return {'normal': (21, 38)}
+
+
+# Curva poblacional MyTanita "Puntuación muscular de las piernas" — score esperado
+# por edad/sexo, extraída del gráfico que MyTanita muestra en su reporte PDF.
+# NO está en el manual oficial RD-545, viene del visor de la app MyTanita.
+# Se interpola linealmente entre puntos para edades intermedias.
+_LEG_SCORE_CURVE = {
+    'M': [
+        (20, 100), (25, 100), (30, 99),  (35, 97),  (40, 94),
+        (45, 91),  (50, 89),  (55, 88),  (60, 87),  (65, 87),
+        (70, 87),  (75, 87),  (80, 87),
+    ],
+    'F': [
+        (20, 100), (25, 100), (30, 99),  (35, 95),  (40, 91),
+        (45, 89),  (50, 87),  (55, 85),  (60, 84),  (65, 83),
+        (70, 82.5), (75, 82),  (80, 81.5),
+    ],
+}
+
+
+def get_leg_muscle_score_reference(sex: str, age: int) -> float:
+    """
+    Valor esperado de 'Puntuación muscular de las piernas' (score de calidad
+    muscular de las piernas) para una persona de esta edad/sexo, según la
+    curva poblacional MyTanita.
+
+    Esta NO es una tabla de manual oficial — es la curva descriptiva que
+    MyTanita muestra en su reporte PDF (gráfico de puntos por edad).
+
+    Para edades intermedias se interpola linealmente entre los puntos
+    conocidos. Edades fuera del rango (<20 o >80) se clampan al extremo.
+
+    Devuelve un único valor numérico (no un rango).
+    """
+    key = 'F' if (sex or '').upper().startswith('F') else 'M'
+    curve = _LEG_SCORE_CURVE[key]
+
+    # Clamp extremos
+    if age <= curve[0][0]:
+        return float(curve[0][1])
+    if age >= curve[-1][0]:
+        return float(curve[-1][1])
+
+    # Interpolación lineal entre los dos puntos que rodean a `age`
+    for i in range(len(curve) - 1):
+        a0, v0 = curve[i]
+        a1, v1 = curve[i + 1]
+        if a0 <= age <= a1:
+            if a1 == a0:
+                return float(v0)
+            t = (age - a0) / (a1 - a0)
+            return float(v0 + (v1 - v0) * t)
+
+    return float(curve[-1][1])  # fallback (no debería ocurrir)
 
 
 def classify_mq_total(mq: float) -> str:
@@ -499,8 +579,19 @@ def compute_muscle(m: TanitaMeasurement, patient: PatientInfo) -> dict:
     leg_score = round((m.quality_right_leg + m.quality_left_leg) / 2, 1)
     mq_refs = get_muscle_quality_references(patient.sex, patient.age)
 
-    leg_score_cat = classify_range(leg_score, mq_refs['normal'],
-                                   low_label='Bajo', normal_label='Normal', high_label='↑ Alta')
+    # leg_score se compara contra la curva poblacional MyTanita (no contra la
+    # tabla del manual RD-545 pág 26 que aplica a los scores segmentales).
+    # La curva da el valor esperado por edad/sexo. Clasificamos con umbral ±10%:
+    # diff > +10% → Alto, diff < -10% → Bajo, en medio → Normal.
+    leg_score_expected = round(get_leg_muscle_score_reference(patient.sex, patient.age), 1)
+    leg_score_diff_pct = round((leg_score - leg_score_expected) / leg_score_expected * 100, 1) \
+                            if leg_score_expected > 0 else 0
+    if leg_score_diff_pct > 10:
+        leg_score_cat = 'Alto'
+    elif leg_score_diff_pct < -10:
+        leg_score_cat = 'Bajo'
+    else:
+        leg_score_cat = 'Normal'
 
     # Segmental: % del ideal por altura
     # Ideal por segmento (valores Tanita para 158 cm mujer, escalables)
@@ -528,12 +619,29 @@ def compute_muscle(m: TanitaMeasurement, patient: PatientInfo) -> dict:
         'left_leg':  {'kg': m.muscle_left_leg,   'ideal_kg': ideal_leg_kg,   'pct_ideal': seg_pct_ideal(m.muscle_left_leg,   ideal_leg_kg),   'quality': m.quality_left_leg},
     }
 
-    # Clasificación de calidad segmental
+    # Clasificación de calidad segmental (score vs rango por edad/sexo del manual)
     for seg_key, seg_data in segmental.items():
         seg_data['quality_cat'] = classify_range(
             seg_data['quality'], mq_refs['normal'],
-            low_label='Bajo', normal_label='Normal', high_label='↑ Normal'
+            low_label='Bajo', normal_label='Normal', high_label='Alto'
         )
+
+    # Clasificación de CANTIDAD segmental (kg vs rango ±20% del ideal por altura/sexo).
+    # El tronco no se clasifica porque Tanita no provee score de calidad para él
+    # y el "ideal" del tronco es muy variable poblacionalmente.
+    for seg_key, seg_data in segmental.items():
+        if seg_key == 'trunk':
+            seg_data['kg_cat'] = None
+            continue
+        ideal = seg_data['ideal_kg']
+        if ideal and ideal > 0:
+            kg_range = (round(ideal * 0.8, 2), round(ideal * 1.2, 2))
+            seg_data['kg_cat'] = classify_range(
+                seg_data['kg'], kg_range,
+                low_label='Bajo', normal_label='Normal', high_label='Alto'
+            )
+        else:
+            seg_data['kg_cat'] = None
 
     mq_total     = m.muscle_quality
     mq_total_cat = classify_mq_total(mq_total)
@@ -551,6 +659,8 @@ def compute_muscle(m: TanitaMeasurement, patient: PatientInfo) -> dict:
         'leg_score': leg_score,
         'leg_score_cat': leg_score_cat,
         'leg_score_normal': mq_refs['normal'],
+        'leg_score_expected': leg_score_expected,
+        'leg_score_diff_pct': leg_score_diff_pct,
         'segmental': segmental,
         'ideal_arm_kg': ideal_arm_kg,
         'ideal_leg_kg': ideal_leg_kg,
