@@ -281,10 +281,10 @@ function page1(d){
       +'<div class="kpc-unit">años'+(d.metabolic_age&&d.age?' <span style="color:'+(parseFloat(d.metabolic_age)<parseFloat(d.age)?'var(--green)':'var(--orange)')+'">('+(parseFloat(d.metabolic_age)-parseFloat(d.age)>0?'+':'')+f(parseFloat(d.metabolic_age)-parseFloat(d.age),0)+' vs cronológica)<\/span>':'')+'<\/div><\/div>'
     +'<div class="kpc"><div class="kpc-lbl">% Grasa global<\/div><div class="kpc-val">'+f(d.body_fat_pct)+'<span style="font-size:12px;font-weight:400">%<\/span><\/div>'
       +'<span class="b '+bc(d.fat_label||'')+'">'+(d.fat_label||'')+'<\/span><\/div>'
-    +'<div class="kpc"><div class="kpc-lbl">ACT<\/div><div class="kpc-val">'+f(d.total_body_water_l)+'<\/div><div class="kpc-unit">L · '+f(d.tbw_pct)+'%<\/div><span class="b b-g">Normal<\/span><\/div>'
-    +'<div class="kpc"><div class="kpc-lbl">MME estimada ±6%<\/div><div class="kpc-val">'+f(d.smm_kg)+'<\/div><div class="kpc-unit">kg<\/div><span class="b b-g">Sin sarcopenia<\/span><\/div>'
-    +'<div class="kpc"><div class="kpc-lbl">Balance muscular<\/div><div class="kpc-val" style="font-size:13px">Brazos Δ'+f(d.balance_arm_pct)+'%<\/div><span class="b b-t">Normal<\/span><\/div>'
-    +'<div class="kpc"><div class="kpc-lbl">Punt. piernas<\/div><div class="kpc-val">'+(d.leg_score||'—')+'<\/div><span class="b b-g">↑ Alta<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">ACT<\/div><div class="kpc-val">'+f(d.total_body_water_l)+'<\/div><div class="kpc-unit">L · '+f(d.tbw_pct)+'%<\/div><span class="b '+bc(d.tbw_pct_label||'Normal')+'">'+(d.tbw_pct_label||'Normal')+'<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">MME estimada ±6%<\/div><div class="kpc-val">'+f(d.smm_kg)+'<\/div><div class="kpc-unit">kg<\/div><span class="b '+bc(d.smm_label||'Sin sarcopenia')+'">'+(d.smm_label||'Sin sarcopenia')+'<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">Balance muscular<\/div><div class="kpc-val" style="font-size:13px">Brazos Δ'+f(d.balance_arm_pct)+'%<\/div><span class="b '+(Math.abs(parseFloat(d.balance_arm_pct||0))<=10?'b-b':'b-o')+'">'+(Math.abs(parseFloat(d.balance_arm_pct||0))<=10?'Normal':'Asimetría')+'<\/span><\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">Punt. piernas<\/div><div class="kpc-val">'+(d.leg_score||'—')+'<\/div><span class="b '+bc(d.leg_score_cat||'')+'">'+(d.leg_score_cat||'—')+'<\/span><\/div>'
     +'<\/div>';
   html+='<div class="st-dot">Masa grasa<\/div>';
   html+='<div style="display:grid;grid-template-columns:50% 15% 35%;gap:8px;align-items:stretch">';
@@ -343,7 +343,7 @@ function page2(d){
   html+='<div class="three" style="margin-bottom:8px">'
     +'<div class="sc"><div class="sc-lbl">Masa musc. Tanita<\/div><div class="sc-val">'+f(d.muscle_mass_kg)+' <span style="font-size:11px;font-weight:400">kg<\/span><\/div><\/div>'
     +'<div class="sc"><div class="sc-lbl">MME estimada +1.19<\/div><div class="sc-val">'+f(d.smm_kg)+' <span style="font-size:11px;font-weight:400">kg<\/span><\/div><\/div>'
-    +'<div class="sc" style="border-color:var(--teal);background:var(--teal-dim)"><div class="sc-lbl">IMME (MME÷alt²)<\/div><div class="sc-val">'+f(d.smm_index)+' <span style="font-size:11px;font-weight:400">kg/m²<\/span><\/div><span class="b b-g" style="margin-top:4px">Sin sarcopenia<\/span><\/div>'
+    +'<div class="sc" style="border-color:var(--teal);background:var(--teal-dim)"><div class="sc-lbl">IMME (MME÷alt²)<\/div><div class="sc-val">'+f(d.smm_index)+' <span style="font-size:11px;font-weight:400">kg/m²<\/span><\/div><span class="b '+bc(d.smm_label||'Sin sarcopenia')+'" style="margin-top:4px">'+(d.smm_label||'Sin sarcopenia')+'<\/span><\/div>'
     +'<\/div>';
   var immePos=Math.min(98,parseFloat(d.smm_index)/20*100);
   html+='<div style="padding:6px 8px;background:#f9fafb;border:1px solid var(--border);border-radius:7px;margin-bottom:9px">'
