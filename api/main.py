@@ -1278,3 +1278,84 @@ async def admin_download_report_pdf(
         media_type='application/pdf',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'},
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FRONTEND ERROR LOGGING
+# ═══════════════════════════════════════════════════════════════════════════════
+# Endpoint público para que el frontend reporte excepciones no manejadas
+# (window.onerror / unhandledrejection / errores manuales). Sin auth para
+# capturar también errores pre-login. Rate-limited y truncado para evitar abuso.
+
+class FrontendErrorRequest(BaseModel):
+    message: str
+    stack: Optional[str] = None
+    url: Optional[str] = None
+    user_agent: Optional[str] = None
+    source: Optional[str] = None        # 'onerror' | 'unhandledrejection' | 'manual'
+    nutri_id: Optional[str] = None      # Si está logueado, lo manda el frontend
+    context: Optional[dict] = None      # JSON libre opcional
+
+
+# Rate-limit muy simple en memoria: max 30 reportes por minuto por IP
+_FE_ERROR_BUCKET: dict[str, list[float]] = defaultdict(list)
+_FE_ERROR_BUCKET_LOCK = Lock()
+
+
+def _fe_error_rate_limited(ip: str) -> bool:
+    now = _time.time()
+    window = 60.0
+    limit = 30
+    with _FE_ERROR_BUCKET_LOCK:
+        bucket = _FE_ERROR_BUCKET[ip]
+        # Limpieza
+        cutoff = now - window
+        bucket[:] = [t for t in bucket if t > cutoff]
+        if len(bucket) >= limit:
+            return True
+        bucket.append(now)
+        return False
+
+
+@app.post("/errors/frontend")
+async def log_frontend_error(body: FrontendErrorRequest, request: Request):
+    """
+    Recibe un error JS del frontend y lo guarda en `frontend_errors`.
+    Endpoint público (sin auth) porque queremos capturar errores pre-login.
+    Rate-limited a 30/min por IP.
+    """
+    ip = request.client.host if request.client else "unknown"
+    if _fe_error_rate_limited(ip):
+        return {"ok": False, "reason": "rate_limited"}
+
+    # Truncar campos largos para evitar abuso
+    def _trim(s: Optional[str], maxlen: int) -> Optional[str]:
+        if s is None:
+            return None
+        return s if len(s) <= maxlen else s[:maxlen] + "...(truncated)"
+
+    row = {
+        "message":    _trim(body.message, 2000),
+        "stack":      _trim(body.stack, 10000),
+        "url":        _trim(body.url, 500),
+        "user_agent": _trim(body.user_agent, 500),
+        "source":     _trim(body.source, 50),
+        "nutri_id":   body.nutri_id if body.nutri_id else None,
+        "context":    body.context,
+    }
+
+    try:
+        from db import DB
+        db = DB()
+        db.client.table("frontend_errors").insert(row).execute()
+        _logger.warning(
+            "frontend_error reported: nutri=%s source=%s message=%s",
+            row.get("nutri_id") or "anonymous",
+            row.get("source"),
+            (row.get("message") or "")[:200],
+        )
+        return {"ok": True}
+    except Exception as e:
+        _logger.error("Failed to log frontend error: %s", e)
+        # No le devolvemos 500 al frontend para evitar loops de errores
+        return {"ok": False, "reason": "db_error"}
