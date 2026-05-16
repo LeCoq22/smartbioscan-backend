@@ -71,7 +71,8 @@ body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--ink
 .tr-l{color:var(--ink-mid)}
 .tr-v{font-weight:600;color:var(--ink)}
 .up{color:var(--green)!important}
-.dn{color:var(--orange)!important}
+.dn{color:var(--red)!important}
+.nu{color:#1d4ed8!important}
 .pfooter{position:absolute;bottom:5mm;left:11mm;right:11mm;display:flex;justify-content:space-between;align-items:center;font-size:7.5px;color:var(--ink-lt);border-top:1px solid var(--border);padding-top:3px}
 @media print{#controls{display:none!important}#report-area{padding:0}.page{box-shadow:none;border-radius:0;margin:0;width:100%}}
 </style>
@@ -280,8 +281,10 @@ function page1(d){
     +'<div class="kpc"><div class="kpc-lbl">Edad metabólica<\/div><div class="kpc-val">'+fi(d.metabolic_age)+'<\/div>'
       +'<div class="kpc-unit">años'+(d.metabolic_age&&d.age?' <span style="color:'+(parseFloat(d.metabolic_age)<parseFloat(d.age)?'var(--green)':'var(--orange)')+'">('+(parseFloat(d.metabolic_age)-parseFloat(d.age)>0?'+':'')+f(parseFloat(d.metabolic_age)-parseFloat(d.age),0)+' vs cronológica)<\/span>':'')+'<\/div><\/div>'
     +'<div class="kpc"><div class="kpc-lbl">% Grasa global<\/div><div class="kpc-val">'+f(d.body_fat_pct)+'<span style="font-size:12px;font-weight:400">%<\/span><\/div>'
-      +'<span class="b '+bc(d.fat_label||'')+'">'+(d.fat_label||'')+'<\/span><\/div>'
-    +'<div class="kpc"><div class="kpc-lbl">ACT<\/div><div class="kpc-val">'+f(d.total_body_water_l)+'<\/div><div class="kpc-unit">L · '+f(d.tbw_pct)+'%<\/div><span class="b '+bc(d.tbw_pct_label||'Normal')+'">'+(d.tbw_pct_label||'Normal')+'<\/span><\/div>'
+      +'<span class="b '+bc(d.fat_label||'')+'">'+(d.fat_label||'')+'<\/span>'
+      +(d.fat_ref_normal_min!=null&&d.fat_ref_normal_max!=null?'<div style="font-size:7px;color:var(--ink-lt);margin-top:2px">rango '+(d.fat_ref_age_label||'')+(d.sex?' '+(d.sex||'').charAt(0).toUpperCase():'')+': '+d.fat_ref_normal_min+'–'+d.fat_ref_normal_max+'%<\/div>':'')
+    +'<\/div>'
+    +'<div class="kpc"><div class="kpc-lbl">Agua Corp. Total<\/div><div class="kpc-val">'+f(d.total_body_water_l)+'<\/div><div class="kpc-unit">L · '+f(d.tbw_pct)+'%<\/div><span class="b '+bc(d.tbw_pct_label||'Normal')+'">'+(d.tbw_pct_label||'Normal')+'<\/span><\/div>'
     +'<div class="kpc"><div class="kpc-lbl">MME estimada ±6%<\/div><div class="kpc-val">'+f(d.smm_kg)+'<\/div><div class="kpc-unit">kg<\/div><span class="b '+bc(d.smm_label||'Sin sarcopenia')+'">'+(d.smm_label||'Sin sarcopenia')+'<\/span><\/div>'
     +'<div class="kpc"><div class="kpc-lbl">Balance muscular<\/div><div class="kpc-val" style="font-size:13px">Brazos Δ'+f(d.balance_arm_pct)+'%<\/div><span class="b '+(Math.abs(parseFloat(d.balance_arm_pct||0))<=10?'b-b':'b-o')+'">'+(Math.abs(parseFloat(d.balance_arm_pct||0))<=10?'Normal':'Asimetría')+'<\/span><\/div>'
     +'<div class="kpc"><div class="kpc-lbl">Punt. piernas<\/div><div class="kpc-val">'+(d.leg_score||'—')+'<\/div><span class="b '+bc(d.leg_score_cat||'')+'">'+(d.leg_score_cat||'—')+'<\/span><\/div>'
@@ -426,9 +429,9 @@ function page3(d){
     +'<div class="rh-r"><div class="pname">'+d.full_name+'<\/div><div class="pdate">'+d.measurement_date+'<\/div><\/div><\/div>';
   html+='<div class="st-dot">Agua corporal total<\/div>';
   html+='<div style="display:grid;grid-template-columns:2fr 1fr;gap:8px;margin-bottom:8px">';
-  html+='<div>'+mkBar('Cantidad total (ACT)',d.total_body_water_l,60,'L',d.tbw_kg_label||'Normal',d.tbw_kg_min,d.tbw_kg_max,(d.tbw_kg_min&&d.tbw_kg_max?d.tbw_kg_min+'–'+d.tbw_kg_max+' kg':''))+mkBar('Porcentaje corporal',d.tbw_pct,72,'%',d.tbw_pct_label||'Normal',d.tbw_pct_min,d.tbw_pct_max,(d.tbw_pct_min&&d.tbw_pct_max?d.tbw_pct_min+'–'+d.tbw_pct_max+'%':''))+'<\/div>';
+  html+='<div>'+mkBar('Cantidad total (Agua Corp. Total)',d.total_body_water_l,60,'L',d.tbw_kg_label||'Normal',d.tbw_kg_min,d.tbw_kg_max,(d.tbw_kg_min&&d.tbw_kg_max?d.tbw_kg_min+'–'+d.tbw_kg_max+' kg':''))+mkBar('Porcentaje corporal',d.tbw_pct,72,'%',d.tbw_pct_label||'Normal',d.tbw_pct_min,d.tbw_pct_max,(d.tbw_pct_min&&d.tbw_pct_max?d.tbw_pct_min+'–'+d.tbw_pct_max+'%':''))+'<\/div>';
   html+='<div class="sc" style="display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">'
-    +'<div class="sc-lbl">ACT<\/div>'
+    +'<div class="sc-lbl">Agua Corp. Total<\/div>'
     +'<div style="font-size:20px;font-weight:800;color:#2563eb;line-height:1">'+f(d.tbw_pct)+'%<\/div>'
     +'<span class="b '+(bc(d.tbw_pct_label||'Normal'))+'" style="margin-top:3px">'+(d.tbw_pct_label||'Normal')+'<\/span>'
     +'<div style="font-size:8px;color:var(--ink-lt);margin-top:2px">'+f(d.total_body_water_l)+' L<\/div>'
@@ -466,10 +469,39 @@ function page3(d){
       +'<\/div>';
     html+='<div>'
       +'<div class="tbox" style="margin-bottom:5px"><div class="tbox-t">Tendencia '+(d.trend_from||'')+' → '+(d.trend_to||'')+'<\/div>'
-      +(dw!=null?'<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v '+tc(dw)+'">'+arr(dw)+' '+delt(dw)+' kg<\/span><\/div>':'')
-      +(dm!=null?'<div class="trow"><span class="tr-l">Masa muscular<\/span><span class="tr-v '+tc(dm)+'">'+arr(dm)+' '+delt(dm)+' kg<\/span><\/div>':'')
-      +(df!=null?'<div class="trow"><span class="tr-l">% grasa<\/span><span class="tr-v '+(parseFloat(df)<0?'up':'dn')+'">'+arr(-parseFloat(df))+' '+delt(df)+'%<\/span><\/div>':'')
-      +(db!=null?'<div class="trow"><span class="tr-l">TMB<\/span><span class="tr-v '+tc(db)+'">'+arr(db)+' '+delt(db,0)+' kcal<\/span><\/div>':'')
+      +(function(){
+        // Color para PESO: depende del IMC final vs rango saludable (18.5-24.9 OMS)
+        // Verde (up): si el IMC final entró en zona saludable (mejoró)
+        // Rojo (dn): si el IMC final salió de zona saludable o se alejó más
+        // Neutro (nu): sin cambio significativo o ambos lados saludables
+        function colorWeight(dw, bmiFirst, bmiLast){
+          if(dw==null||Math.abs(parseFloat(dw))<0.1) return '';
+          var bf=parseFloat(bmiFirst), bl=parseFloat(bmiLast);
+          if(isNaN(bf)||isNaN(bl)) return 'nu';
+          var healthy=function(b){return b>=18.5 && b<=24.9;};
+          if(healthy(bl)&&!healthy(bf)) return 'up';      // entró a saludable
+          if(!healthy(bl)&&healthy(bf)) return 'dn';      // salió de saludable
+          if(!healthy(bl)&&!healthy(bf)){
+            // ambos fuera: ¿se acercó o se alejó del rango?
+            var distFirst=bf<18.5?(18.5-bf):(bf-24.9);
+            var distLast =bl<18.5?(18.5-bl):(bl-24.9);
+            if(distLast<distFirst) return 'up';
+            if(distLast>distFirst) return 'dn';
+          }
+          return 'nu';  // ambos saludables: neutro
+        }
+        // Color por métrica (usamos dw/dm/df/db que ya están calculados arriba)
+        var cw=colorWeight(dw, d.bmi_first, d.bmi_last);
+        var cm=parseFloat(dm)>0?'up':parseFloat(dm)<0?'dn':'';   // músculo: subir bueno
+        var cf=parseFloat(df)<0?'up':parseFloat(df)>0?'dn':'';   // % grasa: bajar bueno
+        var ct='nu';  // TMB: siempre neutro
+        var out='';
+        if(dw!=null) out+='<div class="trow"><span class="tr-l">Peso<\/span><span class="tr-v '+cw+'">'+arr(dw)+' '+delt(dw)+' kg<\/span><\/div>';
+        if(dm!=null) out+='<div class="trow"><span class="tr-l">Masa muscular<\/span><span class="tr-v '+cm+'">'+arr(dm)+' '+delt(dm)+' kg<\/span><\/div>';
+        if(df!=null) out+='<div class="trow"><span class="tr-l">% grasa<\/span><span class="tr-v '+cf+'">'+arr(df)+' '+delt(df)+'%<\/span><\/div>';
+        if(db!=null) out+='<div class="trow"><span class="tr-l">TMB<\/span><span class="tr-v '+ct+'">'+arr(db)+' '+delt(db,0)+' kcal<\/span><\/div>';
+        return out;
+      })()
       +'<\/div>'
       +'<div id="chart-slot"><\/div>'
       +'<\/div>';
