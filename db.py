@@ -414,6 +414,23 @@ class DB:
                .execute())
         return res.data
 
+    def get_patient_csvs_up_to_date(self, patient_id: str,
+                                      target_date: str) -> list:
+        """
+        Retorna mediciones del paciente con measurement_date <= target_date,
+        ordenadas asc (cronológico) — formato pensado para reconstruir el
+        historial necesario por analyze() / compute_evolution sin scrapear.
+
+        target_date: 'YYYY-MM-DD'
+        """
+        res = (self.client.table('patient_csvs')
+               .select('measurement_date, raw_data')
+               .eq('patient_id', patient_id)
+               .lte('measurement_date', target_date)
+               .order('measurement_date', desc=False)
+               .execute())
+        return res.data or []
+
     def mark_csv_report_generated(self, patient_id: str,
                                    measurement_date: str, report_id: str):
         """Marca una medición como con reporte PDF generado."""

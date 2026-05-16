@@ -300,6 +300,44 @@ async def run_pipeline(
                 height_override = height_override or float(patient_row.get('height_cm', 170))
                 print(f"[Pipeline] Datos del paciente desde BD (sin re-scrapear settings)")
 
+    # ── Early-fail: si la medición pedida ya está cacheada en patient_csvs
+    # y le faltan datos, abortamos AHORA (en ~1s) en vez de hacer todo el
+    # scrape (~15-30s) y descubrir el problema al final. No cambia el flow
+    # normal: si la medición no está cacheada o está completa, seguimos.
+    if db and patient_id and measurement_date:
+        target_date = measurement_date[:10]
+        cached_rows = db.get_patient_csvs_up_to_date(patient_id, target_date)
+        target_row = next(
+            (r for r in cached_rows if r['measurement_date'][:10] == target_date),
+            None,
+        )
+        if target_row:
+            raw = target_row.get('raw_data') or {}
+            required = {
+                'weight_kg':      raw.get('weight_kg'),
+                'body_fat_pct':   raw.get('body_fat_pct'),
+                'muscle_mass_kg': raw.get('muscle_mass_kg'),
+                'bmr_kcal':       raw.get('bmr_kcal'),
+            }
+            missing = [k for k, v in required.items() if not v or v <= 0]
+            if missing:
+                print(f"[Pipeline] ✗ Early-fail medición incompleta (cache) "
+                      f"{target_date} — campos: {missing}")
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "measurement_incomplete",
+                        "missing_fields": missing,
+                        "message": (
+                            "Esta medición tiene campos vacíos en MyTanita "
+                            f"({', '.join(missing)}) y no puede analizarse. "
+                            "Esto suele pasar con mediciones tomadas con básculas Tanita "
+                            "más simples que el modelo RD-545. "
+                            "Probá con otra medición del mismo paciente."
+                        ),
+                    },
+                )
+
     # ── Scraping ──────────────────────────────
     scrape = await do_scrape(email, password,
                              skip_settings=settings_in_db,
