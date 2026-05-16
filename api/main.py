@@ -36,7 +36,7 @@ load_dotenv()
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from api.payments import router as payments_router
-from api.email import send_waitlist_confirmation, send_welcome_email
+from api.email import send_waitlist_confirmation, send_welcome_email, send_password_reset_email
 
 
 # ─────────────────────────────────────────────
@@ -1151,3 +1151,130 @@ async def create_admin_nutri(
             except Exception:
                 pass
         raise HTTPException(status_code=500, detail=f"Error al crear Nutri: {exc}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN — Reset de contraseña de un Nutri
+# ═══════════════════════════════════════════════════════════════════════════════
+
+class SendPasswordResetResponse(BaseModel):
+    ok: bool
+    invite_id: str
+    expires_at: str
+    email_sent: bool
+
+
+@app.post("/admin/nutris/{nutri_id}/send-password-reset",
+          response_model=SendPasswordResetResponse)
+async def admin_send_password_reset(
+    nutri_id: str,
+    admin_id: str = Depends(get_admin_nutri),
+):
+    """
+    Genera un token de reset y manda Email C (reset de contraseña) al Nutri.
+    Reusa el flow /set-password existente (mismo endpoint que invite/welcome).
+    NO toca la contraseña actual hasta que el Nutri abre el link y la cambia.
+    """
+    from db import DB
+    db = DB()
+
+    nutri = db.client.table('nutris') \
+        .select('id, email, full_name, is_suspended') \
+        .eq('id', nutri_id) \
+        .single() \
+        .execute()
+    if not nutri.data:
+        raise HTTPException(status_code=404, detail="Nutri no encontrado")
+    if nutri.data.get('is_suspended'):
+        raise HTTPException(status_code=409, detail="No se puede resetear contraseña de un Nutri suspendido")
+
+    email = (nutri.data.get('email') or '').strip()
+    full_name = nutri.data.get('full_name') or ''
+    if not email:
+        raise HTTPException(status_code=500, detail="Nutri sin email registrado")
+
+    # Generar nuevo token (no invalidamos invites previos — el más nuevo se usa,
+    # y los viejos se pueden marcar como expirados si no se usaron antes).
+    token = secrets.token_hex(32)
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+
+    inv = db.client.table('beta_invites').insert({
+        'nutri_id':   nutri_id,
+        'token':      token,
+        'expires_at': expires_at,
+    }).execute()
+    invite_id = inv.data[0]['id']
+
+    frontend_url = os.getenv('FRONTEND_URL', 'https://app.smartbioscan.com')
+    set_pwd_url = f"{frontend_url}/set-password?token={token}"
+
+    email_id = send_password_reset_email(email, full_name, set_pwd_url)
+
+    _logger.info(
+        "admin_send_password_reset admin=%s target_nutri=%s email_sent=%s invite_id=%s",
+        admin_id, nutri_id, bool(email_id), invite_id,
+    )
+
+    return SendPasswordResetResponse(
+        ok=True,
+        invite_id=invite_id,
+        expires_at=expires_at,
+        email_sent=bool(email_id),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN — Descargar PDF de cualquier reporte (sin chequeo de propiedad)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get("/admin/reports/{report_id}/pdf")
+async def admin_download_report_pdf(
+    report_id: str,
+    admin_id: str = Depends(get_admin_nutri),
+):
+    """
+    Versión admin de download_report_pdf: descarga el PDF de cualquier reporte,
+    independientemente del nutri_id propietario. Útil para validaciones internas
+    (revisar reportes de otros nutris sin tener sus credenciales).
+    """
+    import re
+    from db import DB
+    db = DB()
+
+    res = (db.client.table('reports')
+           .select('pdf_storage_path, measurement_date, patient_id, nutri_id')
+           .eq('id', report_id)
+           .execute())
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+
+    row = res.data[0]
+    pdf_path = row.get('pdf_storage_path', '')
+    measurement_date = (row.get('measurement_date') or '')[:10]
+
+    patient_res = (db.client.table('patients')
+                   .select('full_name')
+                   .eq('id', row['patient_id'])
+                   .limit(1)
+                   .execute())
+    patient_name = patient_res.data[0].get('full_name', 'paciente') if patient_res.data else 'paciente'
+
+    safe_name = re.sub(r'[^a-z0-9]+', '-', patient_name.lower()).strip('-')
+    filename = f"reporte-{safe_name}-{measurement_date}.pdf"
+
+    try:
+        pdf_bytes = db.client.storage.from_('reports').download(pdf_path)
+    except Exception:
+        raise HTTPException(status_code=404, detail="PDF no disponible para este reporte")
+
+    _logger.info(
+        "admin_download_report_pdf admin=%s report=%s nutri=%s patient=%s",
+        admin_id, report_id, row.get('nutri_id'), patient_name,
+    )
+
+    return HTMLResponse(
+        content=pdf_bytes,
+        media_type='application/pdf',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
