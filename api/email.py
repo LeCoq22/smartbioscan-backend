@@ -79,6 +79,33 @@ def send_welcome_email(to_email: str, nombre: str, set_password_url: str) -> Opt
         return None
 
 
+def send_password_reset_email(to_email: str, nombre: str, set_password_url: str) -> Optional[str]:
+    """Email C — Reset de contraseña (admin-initiated). Retorna email_id o None."""
+    r = _get_resend()
+    if not r:
+        logger.warning("resend no instalado — Email C omitido para %s", to_email)
+        return None
+    if not r.api_key:
+        logger.warning("RESEND_API_KEY vacía — Email C omitido para %s", to_email)
+        return None
+    try:
+        resp = r.Emails.send({
+            "from":     FROM_EMAIL,
+            "reply_to": REPLY_TO,
+            "to":       [to_email],
+            "subject":  "Restablecé tu contraseña de SmartBioScan",
+            "text":     _email_c_text(nombre, set_password_url),
+            "html":     _email_c_html(nombre, set_password_url),
+        })
+        eid = resp.id if hasattr(resp, "id") else (resp.get("id") if isinstance(resp, dict) else None)
+        logger.info("Email C enviado a %s id=%s", to_email, eid)
+        return eid
+    except Exception as exc:
+        logger.error("Error Email C → %s: %s", to_email, exc)
+        return None
+
+
+
 # ── Templates ─────────────────────────────────────────────────────────────────
 
 def _email_a_text(nombre: str) -> str:
@@ -213,6 +240,68 @@ def _email_b_html(nombre: str, url: str) -> str:
       </td></tr>
       <tr><td style="padding:20px 32px;background-color:#f9fafb;border-top:1px solid #eef0f3;border-radius:0 0 8px 8px;text-align:center;">
         <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.5;">Recibís este correo porque te registraste en el beta de SmartBioScan.</p>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>"""
+
+
+def _email_c_text(nombre: str, url: str) -> str:
+    return f"""Hola {nombre},
+
+Recibimos un pedido para restablecer tu contraseña de SmartBioScan.
+
+Hacé click en el siguiente link para crear una nueva contraseña:
+
+      [ RESTABLECER MI CONTRASEÑA ]
+      {url}
+
+(Este link es único y vence en 7 días.)
+
+Si no esperabas este correo, podés ignorarlo: tu contraseña actual seguirá funcionando \
+hasta que generes una nueva con el link de arriba.
+
+Cualquier duda, respondé este mismo correo.
+
+Lic. Diana Makk
+SmartBioScan"""
+
+
+def _email_c_html(nombre: str, url: str) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Restablecé tu contraseña de SmartBioScan</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f8;padding:32px 16px;">
+  <tr><td align="center">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:#ffffff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+      <tr><td style="padding:32px 32px 16px 32px;text-align:center;border-bottom:1px solid #eef0f3;">
+        <h1 style="margin:0;font-size:20px;font-weight:600;color:#0d7377;">SmartBioScan</h1>
+        <p style="margin:4px 0 0 0;font-size:13px;color:#6b7280;">Análisis de composición corporal</p>
+      </td></tr>
+      <tr><td style="padding:32px;">
+        <p style="margin:0 0 16px 0;font-size:16px;color:#1f2937;line-height:1.5;">Hola <strong>{nombre}</strong>,</p>
+        <p style="margin:0 0 24px 0;font-size:15px;color:#374151;line-height:1.6;">Recibimos un pedido para restablecer tu contraseña de SmartBioScan. Para crear una nueva contraseña, hacé click en el botón de abajo:</p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 16px auto;">
+          <tr><td style="background-color:#0d7377;border-radius:6px;">
+            <a href="{url}" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Restablecer mi contraseña</a>
+          </td></tr>
+        </table>
+        <p style="margin:0 0 32px 0;font-size:13px;color:#6b7280;text-align:center;">Este link es único y vence en 7 días.</p>
+        <div style="margin:0 0 24px 0;padding:16px 20px;background-color:#f9fafb;border-left:3px solid #0d7377;border-radius:4px;">
+          <p style="margin:0;font-size:14px;color:#4b5563;line-height:1.7;">Si no esperabas este correo, podés ignorarlo. Tu contraseña actual seguirá funcionando hasta que generes una nueva con el link de arriba.</p>
+        </div>
+        <p style="margin:0 0 24px 0;font-size:15px;color:#374151;line-height:1.6;">Cualquier duda, respondé este mismo correo.</p>
+        <p style="margin:0;font-size:15px;color:#1f2937;line-height:1.5;"><strong>Lic. Diana Makk</strong><br><span style="color:#6b7280;font-size:14px;">SmartBioScan</span></p>
+      </td></tr>
+      <tr><td style="padding:20px 32px;background-color:#f9fafb;border-top:1px solid #eef0f3;border-radius:0 0 8px 8px;text-align:center;">
+        <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.5;">Recibís este correo porque tenés una cuenta en SmartBioScan.</p>
       </td></tr>
     </table>
   </td></tr>
