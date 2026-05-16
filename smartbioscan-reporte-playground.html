@@ -58,6 +58,8 @@ body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--ink
 .minibar{display:inline-block;vertical-align:middle;width:50px;height:6px;background:#e5e7eb;border-radius:10px;overflow:hidden;margin-left:4px}
 .minibar span{display:block;height:100%;border-radius:10px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.two-21{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+.twobytwo{display:grid;grid-template-columns:1fr 1fr;gap:6px}
 .three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px}
 .four{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:5px}
 .sc{border:1px solid var(--border);border-radius:7px;padding:7px 9px}
@@ -383,18 +385,25 @@ function page2(d){
     +'<span style="font-size:22px;font-weight:800;color:var(--teal)">'+(d.muscle_quality_total||'—')+' <span style="font-size:12px;font-weight:400">'+(d.muscle_quality_label||'')+'<\/span><\/span>'
     +'<\/div>';
   html+='<div class="st">Balance muscular y puntuación de piernas<\/div>';
-  html+='<div class="two">';
-  html+='<div><div style="font-size:9.5px;font-weight:600;color:var(--ink-mid);margin-bottom:5px">Balance de masa muscular<\/div>'
-    +'<div class="four">'
-    +'<div class="sc"><div class="sc-lbl">Brazo izq.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_arm_l_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><div class="sc-sub">Δ'+f(d.balance_arm_pct)+'% '+(Math.abs(parseFloat(d.balance_arm_pct||0))<=10?'Normal':'Asimetría')+'<\/div><\/div>'
-    +'<div class="sc"><div class="sc-lbl">Brazo der.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_arm_r_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
-    +'<div class="sc"><div class="sc-lbl">Pierna izq.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_leg_l_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><div class="sc-sub">Δ'+f(d.balance_leg_pct)+'% '+(Math.abs(parseFloat(d.balance_leg_pct||0))<=10?'Normal':'Asimetría')+'<\/div><\/div>'
-    +'<div class="sc"><div class="sc-lbl">Pierna der.<\/div><div class="sc-val" style="font-size:15px">'+f(d.muscle_leg_r_kg)+' <span style="font-size:9px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
-    +'<\/div><\/div>';
+  html+='<div class="two-21">';
+  html+='<div>'
+    +'<div style="font-size:9.5px;font-weight:600;color:var(--ink-mid);margin-bottom:5px">Balance de masa muscular<\/div>'
+    +'<div class="twobytwo">'
+    +'<div class="sc" style="text-align:center"><div class="sc-lbl">Brazo izquierdo<\/div><div class="sc-val" style="font-size:18px">'+f(d.muscle_arm_l_kg,2)+' <span style="font-size:10px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
+    +'<div class="sc" style="text-align:center"><div class="sc-lbl">Brazo derecho<\/div><div class="sc-val" style="font-size:18px">'+f(d.muscle_arm_r_kg,2)+' <span style="font-size:10px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
+    +'<div class="sc" style="text-align:center"><div class="sc-lbl">Pierna izquierda<\/div><div class="sc-val" style="font-size:18px">'+f(d.muscle_leg_l_kg,2)+' <span style="font-size:10px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
+    +'<div class="sc" style="text-align:center"><div class="sc-lbl">Pierna derecha<\/div><div class="sc-val" style="font-size:18px">'+f(d.muscle_leg_r_kg,2)+' <span style="font-size:10px;font-weight:400;color:var(--ink-lt)">kg<\/span><\/div><\/div>'
+    +'<\/div>'
+    +'<div style="display:flex;gap:10px;margin-top:7px;padding-top:6px;border-top:1px solid var(--border);font-size:9.5px">'
+      +'<div style="flex:1"><span style="color:var(--ink-lt)">Brazos<\/span> <span style="font-weight:700">Δ '+f(d.balance_arm_pct)+'%<\/span> <span class="b '+(Math.abs(parseFloat(d.balance_arm_pct||0))<=10?'b-b':'b-o')+'" style="font-size:8.5px;margin-left:2px">'+(Math.abs(parseFloat(d.balance_arm_pct||0))<=10?'Normal':'Asimetría')+'<\/span><\/div>'
+      +'<div style="flex:1"><span style="color:var(--ink-lt)">Piernas<\/span> <span style="font-weight:700">Δ '+f(d.balance_leg_pct)+'%<\/span> <span class="b '+(Math.abs(parseFloat(d.balance_leg_pct||0))<=10?'b-b':'b-o')+'" style="font-size:8.5px;margin-left:2px">'+(Math.abs(parseFloat(d.balance_leg_pct||0))<=10?'Normal':'Asimetría')+'<\/span><\/div>'
+    +'<\/div>'
+    +'<\/div>';
   html+='<div class="sc" style="text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">'
     +'<div class="sc-lbl">Puntuación muscular de piernas<\/div>'
-    +'<div style="font-size:56px;font-weight:800;color:var(--teal);line-height:1">'+(d.leg_score||'—')+'<\/div>'
-    +'<div style="font-size:9.5px;color:var(--ink-lt)">esperado '+(d.leg_score_expected||'—')+(d.leg_score_diff_pct!=null?' · Δ '+(parseFloat(d.leg_score_diff_pct)>=0?'+':'')+f(d.leg_score_diff_pct)+'%':'')+'<\/div>'
+    +'<div style="font-size:42px;font-weight:800;color:var(--teal);line-height:1;margin:3px 0">'+(d.leg_score||'—')+'<\/div>'
+    +'<div style="font-size:9px;color:var(--ink-lt)">esperado '+(d.leg_score_expected||'—')+'<\/div>'
+    +(d.leg_score_diff_pct!=null?'<div style="font-size:9px;color:var(--ink-lt)">Δ '+(parseFloat(d.leg_score_diff_pct)>=0?'+':'')+f(d.leg_score_diff_pct)+'%<\/div>':'')
     +'<span class="b '+bc(d.leg_score_cat||'')+'" style="margin-top:5px">'+(d.leg_score_cat||'—')+'<\/span>'
     +'<\/div>';
   html+='<\/div>';
