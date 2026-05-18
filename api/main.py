@@ -37,6 +37,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from api.payments import router as payments_router
 from api.email import send_waitlist_confirmation, send_welcome_email, send_password_reset_email
+from api.subscriptions import register_routes as _register_subscription_routes
 
 
 # ─────────────────────────────────────────────
@@ -395,6 +396,8 @@ async def get_admin_nutri(
 # ─────────────────────────────────────────────
 from api.admin_regenerate import register_routes as _register_admin_regen_routes
 _register_admin_regen_routes(app, get_admin_nutri)
+
+_register_subscription_routes(app, get_current_nutri)
 
 
 # ─────────────────────────────────────────────

@@ -1,7 +1,14 @@
 """
-SmartTanita — Módulo de pagos MercadoPago
-POST /payments/create-preference  — crea preferencia y devuelve init_point
-POST /payments/webhook            — recibe notificaciones MP y actualiza Supabase
+SmartTanita — Módulo de pagos MercadoPago (Checkout Bricks)
+
+# DEPRECATED — migrating to subscriptions, see api/subscriptions.py
+# Este módulo se mantiene para compatibilidad con pagos en vuelo.
+# El endpoint /payments/webhook sigue activo y ahora también maneja
+# los eventos de Subscriptions (subscription_preapproval,
+# subscription_authorized_payment) delegando en api/subscriptions.py.
+
+POST /payments/create-preference  — DEPRECATED: crea preferencia Bricks
+POST /payments/webhook            — activo: recibe todas las notifs MP
 """
 
 import calendar
@@ -203,32 +210,38 @@ async def mp_webhook(
     x_request_id: Optional[str] = Header(None, alias="x-request-id"),
 ):
     """
-    Recibe notificaciones de pago de MercadoPago.
+    Recibe notificaciones de MercadoPago (todos los tipos de evento).
 
-    MP envía:  POST /payments/webhook
-               { "type": "payment", "data": { "id": "<payment_id>" } }
-
-    Lógica:
-    - Verifica firma HMAC-SHA256 (si MP_WEBHOOK_SECRET está configurado)
-    - Consulta el pago a la API de MP para confirmar status=approved
-    - Actualiza subscription_end, subscription_status y max_reports_month en nutris
-    - Si la suscripción actual no venció, extiende desde subscription_end (renovación)
+    Tipos manejados:
+    - payment                        → Bricks (DEPRECATED, compatibilidad)
+    - subscription_preapproval       → Subscriptions: activación / cancelación
+    - subscription_authorized_payment → Subscriptions: cobro recurrente
     """
     payload = await request.json()
-
-    # Solo procesamos notificaciones de tipo "payment"
-    if payload.get("type") != "payment":
-        return {"ok": True, "detail": "ignored"}
-
+    event_type = payload.get("type", "")
     data_id = str(payload.get("data", {}).get("id", ""))
+
     if not data_id:
         return {"ok": True, "detail": "no data.id"}
 
     if not _verify_webhook_signature(x_signature, x_request_id, data_id):
         raise HTTPException(status_code=401, detail="Firma del webhook inválida")
 
-    # Obtener detalles del pago desde la API de MP
     sdk = _mp_sdk()
+
+    # ── Suscripciones (Pre-aprobados) ─────────────────────────────────────
+    if event_type == "subscription_preapproval":
+        from api.subscriptions import handle_subscription_preapproval
+        return await handle_subscription_preapproval(sdk, data_id)
+
+    if event_type == "subscription_authorized_payment":
+        from api.subscriptions import handle_authorized_payment
+        return await handle_authorized_payment(sdk, data_id)
+
+    # ── Pago único Bricks (DEPRECATED) ────────────────────────────────────
+    if event_type != "payment":
+        return {"ok": True, "detail": f"event_type={event_type} ignored"}
+
     payment_result = sdk.payment().get(data_id)
     payment = payment_result.get("response", {})
 
@@ -241,7 +254,6 @@ async def mp_webhook(
         logger.info("Pago %s status=%s — ignorado", data_id, status)
         return {"ok": True, "detail": f"status={status}"}
 
-    # Extraer plan_id y email del metadata de la preferencia
     metadata = payment.get("metadata", {})
     plan_id = metadata.get("plan_id")
     user_email = metadata.get("user_email") or payment.get("payer", {}).get("email")
@@ -251,7 +263,6 @@ async def mp_webhook(
         logger.error("plan_id desconocido en webhook: %s | pago=%s", plan_id, data_id)
         return {"ok": True, "detail": f"plan_id '{plan_id}' desconocido"}
 
-    # Actualizar nutri en Supabase
     from db import DB
     db = DB()
 
@@ -268,7 +279,6 @@ async def mp_webhook(
     nutri = res.data[0]
     nutri_id = nutri["id"]
 
-    # Calcular nueva fecha de fin: extender si la suscripción actual sigue vigente
     current_end_str = nutri.get("subscription_end")
     if (
         current_end_str
@@ -288,10 +298,7 @@ async def mp_webhook(
         "max_patients":        plan["max_patients"],
     }).eq("id", nutri_id).execute()
 
-    logger.info(
-        "Suscripción activada: nutri=%s plan=%s hasta=%s",
-        nutri_id, plan_id, new_end,
-    )
+    logger.info("Suscripción Bricks activada: nutri=%s plan=%s hasta=%s", nutri_id, plan_id, new_end)
     return {
         "ok": True,
         "nutri_id": nutri_id,
