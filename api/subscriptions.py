@@ -41,7 +41,7 @@ PLANS: dict[str, dict] = {
         "max_reports_month": 30,
         "max_patients": 15,
         "subscription_type": "monthly",
-        "mp_plan_id": "",  # completar tras ejecutar create_mp_plans.py
+        "mp_plan_id": "2b21a1d0497b45c68637cccafdd5cc22",  # completar tras ejecutar create_mp_plans.py
     },
     "bioscan_plus_mensual": {
         "title": "BioScan Plus — Mensual",
@@ -50,7 +50,7 @@ PLANS: dict[str, dict] = {
         "max_reports_month": 100,
         "max_patients": 40,
         "subscription_type": "monthly",
-        "mp_plan_id": "",
+        "mp_plan_id": "6b612b2d9b624fa29d3ad200284580d5",
     },
     "bioscan_basico_semestral": {
         "title": "BioScan Básico — Semestral",
@@ -59,7 +59,7 @@ PLANS: dict[str, dict] = {
         "max_reports_month": 30,
         "max_patients": 15,
         "subscription_type": "semestral",
-        "mp_plan_id": "",
+        "mp_plan_id": "6e96b27b48f9439e8385aaf87d133511",
     },
     "bioscan_plus_semestral": {
         "title": "BioScan Plus — Semestral",
@@ -68,7 +68,7 @@ PLANS: dict[str, dict] = {
         "max_reports_month": 100,
         "max_patients": 40,
         "subscription_type": "semestral",
-        "mp_plan_id": "",
+        "mp_plan_id": "095f5bf5100d4a39a5d5cafd6062d94d",
     },
 }
 
