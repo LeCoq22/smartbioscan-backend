@@ -328,6 +328,12 @@ class NutriMeResponse(BaseModel):
     email: str
     full_name: str
     display_signature: Optional[str] = None
+    subscription_status: Optional[str] = None
+    subscription_type: Optional[str] = None
+    subscription_end: Optional[str] = None
+    subscription_next_billing_date: Optional[str] = None
+    max_reports_month: Optional[int] = None
+    max_patients: Optional[int] = None
 
 class UpdateNutriMeRequest(BaseModel):
     display_signature: str
@@ -758,7 +764,11 @@ async def get_nutri_me(nutri_id: str = Depends(get_current_nutri)):
     from db import DB
     db = DB()
     res = (db.client.table('nutris')
-           .select('id, email, full_name, display_signature')
+           .select(
+               'id, email, full_name, display_signature, '
+               'subscription_status, subscription_type, subscription_end, '
+               'subscription_next_billing_date, max_reports_month, max_patients'
+           )
            .eq('id', nutri_id)
            .single()
            .execute())
