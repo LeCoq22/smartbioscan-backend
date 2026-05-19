@@ -36,7 +36,7 @@ router = APIRouter(prefix="/api/subscriptions", tags=["subscriptions"])
 PLANS: dict[str, dict] = {
     "bioscan_basico_mensual": {
         "title": "BioScan Básico — Mensual",
-        "unit_price": 24500.0,
+        "unit_price": 100.0,
         "months": 1,
         "max_reports_month": 30,
         "max_patients": 15,
