@@ -373,26 +373,38 @@ def register_routes(app, get_current_nutri_dep):
         payer_email = nutri_res.data["email"]
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
-        sdk = _mp_sdk()
-        result = sdk.preapproval().create({
+        payload = {
             "preapproval_plan_id": mp_plan_id,
             "payer_email":         payer_email,
             "back_url":            f"{frontend_url}/planes?status=pending",
             "external_reference":  nutri_id,
             "reason":              plan["title"],
-        })
+        }
+        token = os.getenv("MP_ACCESS_TOKEN")
+        if not token:
+            raise HTTPException(status_code=500, detail="MP_ACCESS_TOKEN no configurado")
 
-        response = result.get("response", {})
-        if result.get("status") not in (200, 201):
+        async with httpx.AsyncClient(timeout=30) as client:
+            r = await client.post(
+                "https://api.mercadopago.com/preapproval",
+                json=payload,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type":  "application/json",
+                },
+            )
+
+        if r.status_code not in (200, 201):
             logger.error(
-                "preapproval.create falló: nutri=%s plan=%s status=%s resp=%s",
-                nutri_id, body.plan_id, result.get("status"), response,
+                "preapproval HTTP create falló: nutri=%s plan=%s status=%s resp=%s",
+                nutri_id, body.plan_id, r.status_code, r.text,
             )
             raise HTTPException(
                 status_code=502,
-                detail=f"Error MercadoPago: {response.get('message', response)}",
+                detail=f"Error MercadoPago: {r.text}",
             )
 
+        response = r.json()
         preapproval_id = response.get("id", "")
         init_point = response.get("init_point", "")
 
