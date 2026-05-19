@@ -366,6 +366,17 @@ def register_routes(app, get_current_nutri_dep):
         payer_email = nutri_res.data["email"]
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+        # En sandbox de MP, MP exige que payer_email sea de un test_user de su panel.
+        # Override solo cuando estamos en TEST y la env var está seteada.
+        mp_token = os.getenv("MP_ACCESS_TOKEN", "")
+        test_email_override = os.getenv("MP_TEST_PAYER_EMAIL_OVERRIDE", "")
+        if mp_token.startswith("TEST-") and test_email_override:
+            logger.warning(
+                "Usando MP_TEST_PAYER_EMAIL_OVERRIDE='%s' (sandbox) en lugar del email real='%s'",
+                test_email_override, payer_email,
+            )
+            payer_email = test_email_override
+
         # Suscripción SIN preapproval_plan_id (Opción 2):
         # MP no exige card_token_id en este modo y devuelve init_point para Checkout Pro.
         # Los datos del plan van inline en auto_recurring.
