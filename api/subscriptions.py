@@ -352,13 +352,6 @@ def register_routes(app, get_current_nutri_dep):
                 detail=f"plan_id inválido. Opciones válidas: {list(PLANS.keys())}",
             )
 
-        mp_plan_id = plan.get("mp_plan_id", "")
-        if not mp_plan_id:
-            raise HTTPException(
-                status_code=503,
-                detail="Este plan aún no está configurado en MercadoPago. Contactá soporte.",
-            )
-
         # Obtener email del nutri desde la BD
         from db import DB
         db = DB()
@@ -373,12 +366,20 @@ def register_routes(app, get_current_nutri_dep):
         payer_email = nutri_res.data["email"]
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+        # Suscripción SIN preapproval_plan_id (Opción 2):
+        # MP no exige card_token_id en este modo y devuelve init_point para Checkout Pro.
+        # Los datos del plan van inline en auto_recurring.
         payload = {
-            "preapproval_plan_id": mp_plan_id,
-            "payer_email":         payer_email,
-            "back_url":            f"{frontend_url}/planes?status=pending",
-            "external_reference":  nutri_id,
-            "reason":              plan["title"],
+            "reason":             plan["title"],
+            "payer_email":        payer_email,
+            "back_url":           f"{frontend_url}/planes?status=pending",
+            "external_reference": nutri_id,
+            "auto_recurring": {
+                "frequency":          plan["months"],
+                "frequency_type":     "months",
+                "transaction_amount": plan["unit_price"],
+                "currency_id":        "ARS",
+            },
         }
         token = os.getenv("MP_ACCESS_TOKEN")
         if not token:
