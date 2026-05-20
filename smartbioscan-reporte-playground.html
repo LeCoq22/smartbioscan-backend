@@ -91,6 +91,20 @@ body{font-family:'IBM Plex Sans',sans-serif;background:var(--bg);color:var(--ink
 // ── physiqueRating
 function physiqueRating(rating){
   var r=parseInt(rating)||0;
+  // Labels según manual TANITA RD-545 pág 25 (1=Obeso oculto … 9=Muy musculoso).
+  // Mantener sincronizado con _physique_labels en analysis_engine.py
+  var PHYSIQUE_LABELS={
+    1:'Obeso',
+    2:'Sobrepeso, masa baja',
+    3:'Sobrepeso, masa alta',
+    4:'Est&aacute;ndar, masa baja',
+    5:'Est&aacute;ndar',
+    6:'Est&aacute;ndar, masa alta',
+    7:'Delgado',
+    8:'Delgado y musculoso',
+    9:'Muy musculoso'
+  };
+  var physiqueLabel=PHYSIQUE_LABELS[r]||('Rating '+r);
   var C='<'+'/';  // Avoid browser parsing <\/tag> inside script
   function bp(cx,fxp,bxp,axp,abdp,yNk,ySh,yCh,yWa,yBe,yGr,yTh,yKn,yAn,yFt){
     return 'M '+(cx-1)+','+yNk
@@ -153,7 +167,7 @@ function physiqueRating(rating){
     +'<div style="display:flex;align-items:center;gap:2px;font-size:5.5px;line-height:1.3"><span style="width:6px;height:6px;border-radius:50%;background:#BFDBFE;border:0.5px solid #93C5FD;display:inline-block;flex-shrink:0">'+C+'span>Representa la grasa'+C+'div>'
     +'<div style="border-top:0.5px solid #e5e7eb;margin:3px 0">'+C+'div>'
     +'<div style="font-size:8px;font-weight:700">Rating '+r+'/9'+C+'div>'
-    +'<div style="font-size:5.5px;color:var(--ink-lt)">Delgado y musculoso'+C+'div>'
+    +'<div style="font-size:5.5px;color:var(--ink-lt)">'+physiqueLabel+C+'div>'
     +C+'div>';
   return '<div style="display:flex;align-items:flex-start">'
     +'<div><div style="display:flex">'+axY+'<div>'+grid+axX+C+'div>'+C+'div>'+C+'div>'

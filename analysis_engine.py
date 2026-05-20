@@ -575,14 +575,29 @@ def compute_muscle(m: TanitaMeasurement, patient: PatientInfo) -> dict:
     else:
         imme_cat = 'Sarcopenia'
 
-    # Puntuación calidad muscular piernas (score Tanita)
-    leg_score = round((m.quality_right_leg + m.quality_left_leg) / 2, 1)
+    # Puntuación muscular de las piernas (Leg Muscle Score MyTanita)
+    # ──────────────────────────────────────────────────────────────
+    # Fórmula derivada de la lógica que TANITA describe:
+    #   Leg Muscle Score ∝ (masa muscular de piernas / peso corporal)
+    #   normalizado contra el ratio de población joven saludable.
+    #
+    # Calibración:
+    #   ratio_joven_F = 0.26   (mujer 20-30 en pico → score ≈ 100)
+    #   ratio_joven_M = 0.32   (varón 20-30 en pico → score ≈ 100)
+    #
+    # El score final se compara contra la curva poblacional MyTanita
+    # _LEG_SCORE_CURVE (extraída del gráfico del visor MyTanita) que
+    # da el valor esperado por edad/sexo. Clasificación con umbral ±10%.
+    leg_mass_total = m.muscle_right_leg + m.muscle_left_leg
+    ratio_young_healthy = 0.26 if patient.sex == 'F' else 0.32
+    if m.weight_kg > 0:
+        leg_ratio = leg_mass_total / m.weight_kg
+        leg_score = round(100.0 * leg_ratio / ratio_young_healthy, 1)
+    else:
+        leg_score = 0.0
+
     mq_refs = get_muscle_quality_references(patient.sex, patient.age)
 
-    # leg_score se compara contra la curva poblacional MyTanita (no contra la
-    # tabla del manual RD-545 pág 26 que aplica a los scores segmentales).
-    # La curva da el valor esperado por edad/sexo. Clasificamos con umbral ±10%:
-    # diff > +10% → Alto, diff < -10% → Bajo, en medio → Normal.
     leg_score_expected = round(get_leg_muscle_score_reference(patient.sex, patient.age), 1)
     leg_score_diff_pct = round((leg_score - leg_score_expected) / leg_score_expected * 100, 1) \
                             if leg_score_expected > 0 else 0
