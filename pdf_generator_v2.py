@@ -85,6 +85,8 @@ def _build_data(analysis: dict, doctor_name: str = '') -> dict:
         'tbw_kg_label':       act['act_kg_cat'],
         'muscle_mass_kg':     m.muscle_mass_kg,
         'smm_kg':             muscle['mme_kg'],
+        'smm_kg_min':         muscle['mme_range'][0],
+        'smm_kg_max':         muscle['mme_range'][1],
         'smm_index':          muscle['imme'],
         'smm_label':          muscle['imme_cat'],
         'bone_mass_kg':       m.bone_mass_kg,
