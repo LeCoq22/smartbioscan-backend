@@ -579,17 +579,24 @@ def compute_muscle(m: TanitaMeasurement, patient: PatientInfo) -> dict:
     # ──────────────────────────────────────────────────────────────
     # Fórmula derivada de la lógica que TANITA describe:
     #   Leg Muscle Score ∝ (masa muscular de piernas / peso corporal)
-    #   normalizado contra el ratio de población joven saludable.
+    #   normalizado contra el ratio de población de referencia.
     #
-    # Calibración:
-    #   ratio_joven_F = 0.26   (mujer 20-30 en pico → score ≈ 100)
-    #   ratio_joven_M = 0.32   (varón 20-30 en pico → score ≈ 100)
+    # Calibración empírica contra 6 PDFs reales de mytanita.eu (M y F,
+    # edades 23-66, BMI 19-50). Error absoluto medio < 1 pt, máximo 2.2:
+    #   ratio_ref_F = 0.2387  (calibrado con Esperanza atleta, Susana
+    #                          obesa, Diana intermedia)
+    #   ratio_ref_M = 0.2764  (calibrado con Cristian joven, Claudio
+    #                          obeso, Martin mayor magro)
+    #
+    # Nota: las constantes son notablemente estables por sexo y NO
+    # dependen de la edad. TANITA mismo no usa la edad en el cálculo —
+    # la curva poblacional sólo sirve para clasificar el resultado.
     #
     # El score final se compara contra la curva poblacional MyTanita
     # _LEG_SCORE_CURVE (extraída del gráfico del visor MyTanita) que
     # da el valor esperado por edad/sexo. Clasificación con umbral ±10%.
     leg_mass_total = m.muscle_right_leg + m.muscle_left_leg
-    ratio_young_healthy = 0.26 if patient.sex == 'F' else 0.32
+    ratio_young_healthy = 0.2387 if patient.sex == 'F' else 0.2764
     if m.weight_kg > 0:
         leg_ratio = leg_mass_total / m.weight_kg
         leg_score = round(100.0 * leg_ratio / ratio_young_healthy, 1)
