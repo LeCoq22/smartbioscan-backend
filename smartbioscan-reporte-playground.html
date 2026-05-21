@@ -95,11 +95,11 @@ function physiqueRating(rating){
   // Mantener sincronizado con _physique_labels en analysis_engine.py
   var PHYSIQUE_LABELS={
     1:'Obeso',
-    2:'Sobrepeso, masa baja',
-    3:'Sobrepeso, masa alta',
-    4:'Est&aacute;ndar, masa baja',
+    2:'Sobrepeso, masa muscular baja',
+    3:'Sobrepeso, masa muscular alta',
+    4:'Est&aacute;ndar, masa muscular baja',
     5:'Est&aacute;ndar',
-    6:'Est&aacute;ndar, masa alta',
+    6:'Est&aacute;ndar, masa muscular alta',
     7:'Delgado',
     8:'Delgado y musculoso',
     9:'Muy musculoso'
@@ -353,7 +353,14 @@ function page1(d){
     +physiqueRating(d.physique_rating)
     +'<\/div>';
   html+='<\/div>';
-  html+='<div style="margin-top:5px;font-size:8.5px;color:var(--ink-lt);border:0.5px solid var(--border);border-radius:4px;padding:4px 8px"><strong>Peso total:<\/strong> '+f(d.weight_kg)+' kg &nbsp;<span style="color:var(--green);font-weight:600">Normal<\/span><\/div>';
+  // Badge dinámico de peso según BMI (18.5-25 saludable, antes hardcoded como Normal)
+  var _wHm=(parseFloat(d.height_cm)||0)/100;
+  var _wMin=_wHm>0?(18.5*_wHm*_wHm).toFixed(1):null;
+  var _wMax=_wHm>0?(25.0*_wHm*_wHm).toFixed(1):null;
+  var _wKg=parseFloat(d.weight_kg)||0;
+  var _wCat=_wHm===0?'—':(_wKg<parseFloat(_wMin)?'Bajo peso':(_wKg>parseFloat(_wMax)?'Sobrepeso':'Normal'));
+  var _wColor=_wCat==='Normal'?'var(--green)':(_wCat==='Bajo peso'?'var(--orange)':'var(--red)');
+  html+='<div style="margin-top:5px;font-size:8.5px;color:var(--ink-lt);border:0.5px solid var(--border);border-radius:4px;padding:4px 8px"><strong>Peso total:<\/strong> '+f(d.weight_kg)+' kg &nbsp;<span style="color:'+_wColor+';font-weight:600">'+_wCat+'<\/span>'+(_wMin!==null?' &nbsp;<span style="color:var(--ink-lt)">(rango sano: '+_wMin+'–'+_wMax+' kg)<\/span>':'')+'<\/div>';
   html+='<div class="st">Grasa Segmental — % real<\/div>';
   html+='<table class="sgt"><thead><tr><th>Segmento<\/th><th>% real<\/th><th>Clasificación<\/th><th>Referencia / Ideal<\/th><\/tr><\/thead><tbody>';
   html+=srow('Tronco',d.fat_trunk_pct,d.fat_trunk_label,'ref '+d.fat_trunk_ref_min+'–'+d.fat_trunk_ref_max+'% · ideal '+d.fat_trunk_ref_ideal+'%');
