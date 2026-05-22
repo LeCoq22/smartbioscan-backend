@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from api.payments import router as payments_router
 from api.email import send_waitlist_confirmation, send_welcome_email, send_password_reset_email
 from api.subscriptions import register_routes as _register_subscription_routes
+from api.error_logging import BackendErrorLoggingMiddleware
 
 
 # ─────────────────────────────────────────────
@@ -82,6 +83,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Captura de errores 5xx en la tabla backend_errors (después de CORS para
+# que los CORS headers se apliquen también a respuestas de error)
+app.add_middleware(BackendErrorLoggingMiddleware)
 
 
 # ─────────────────────────────────────────────
