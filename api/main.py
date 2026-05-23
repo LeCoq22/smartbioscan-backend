@@ -1335,6 +1335,35 @@ def _fe_error_rate_limited(ip: str) -> bool:
         return False
 
 
+@app.get("/admin/backend-errors")
+async def list_backend_errors(
+    limit: int = 100,
+    path_contains: Optional[str] = None,
+    admin_id: str = Depends(get_admin_nutri),
+):
+    """
+    Lista los últimos errores 5xx capturados por BackendErrorLoggingMiddleware.
+    Solo admin. Aplana el join con nutris para que el frontend reciba
+    nutri_full_name y nutri_email como campos flat.
+    """
+    from db import DB
+    db = DB()
+    limit = max(1, min(int(limit or 100), 500))
+    q = db.client.table('backend_errors').select(
+        '*, nutris(full_name, email)'
+    ).order('created_at', desc=True).limit(limit)
+    if path_contains:
+        q = q.ilike('request_path', f'%{path_contains}%')
+    res = q.execute()
+    rows = []
+    for row in (res.data or []):
+        nutri = row.pop('nutris', None) or {}
+        row['nutri_full_name'] = nutri.get('full_name')
+        row['nutri_email']     = nutri.get('email')
+        rows.append(row)
+    return {"errors": rows, "total": len(rows)}
+
+
 @app.post("/errors/frontend")
 async def log_frontend_error(body: FrontendErrorRequest, request: Request):
     """
