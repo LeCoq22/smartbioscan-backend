@@ -302,6 +302,20 @@ class LoginHintRequest(BaseModel):
 class LoginHintResponse(BaseModel):
     hint: str   # not_registered | wrong_password
 
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ForgotPasswordResponse(BaseModel):
+    ok: bool
+    # 'sent'      → email enviado
+    # 'not_nutri' → email no figura como nutricionista
+    # 'suspended' → cuenta suspendida (no enviamos)
+    status: str
+    message: str
+
+
 class ApproveWaitlistResponse(BaseModel):
     ok: bool
     nutri_id: Optional[str] = None
@@ -1013,6 +1027,88 @@ async def login_hint(request: Request, body: LoginHintRequest):
     res = db.client.table('nutris').select('id').eq('email', (body.email or '').lower()).execute()
     hint = 'wrong_password' if res.data else 'not_registered'
     return LoginHintResponse(hint=hint)
+
+
+@app.post("/api/auth/forgot-password", response_model=ForgotPasswordResponse)
+async def forgot_password(request: Request, body: ForgotPasswordRequest):
+    """
+    Endpoint público de reset de contraseña self-service.
+
+    Reusa el flow existente de beta_invites + Email C + /set-password.
+
+    Rate-limited: 3 requests/min por IP (más estricto que login-hint
+    porque dispara envío de email real).
+
+    Devuelve un status explícito ('not_nutri') si el email no está
+    en nutris — decisión consciente para una beta cerrada B2B donde
+    los usuarios suelen confundir SmartBioScan con MyTanita.
+    """
+    ip = request.client.host if request.client else "unknown"
+    email_norm = (body.email or "").strip().lower()
+    _logger.info(
+        "forgot-password from %s email_domain=%s",
+        ip,
+        email_norm.split('@')[-1] if '@' in email_norm else 'n/a',
+    )
+
+    if not _allow_rate(ip, limit=3, window=60):
+        _logger.warning("forgot-password rate-limited: %s", ip)
+        raise HTTPException(status_code=429, detail="Demasiadas solicitudes. Intentá en un minuto.")
+
+    if not email_norm or '@' not in email_norm:
+        raise HTTPException(status_code=400, detail="Email inválido.")
+
+    from db import DB
+    db = DB()
+
+    nutri = db.client.table('nutris') \
+        .select('id, email, full_name, is_suspended') \
+        .eq('email', email_norm) \
+        .execute()
+
+    if not nutri.data:
+        return ForgotPasswordResponse(
+            ok=True,
+            status='not_nutri',
+            message='Este email no figura como nutricionista en SmartBioScan. Si sos paciente, el sistema que usás es app.mytanita.eu. Si sos nutri, revisá con qué email te registraste.'
+        )
+
+    row = nutri.data[0]
+    if row.get('is_suspended'):
+        _logger.warning("forgot-password para nutri suspendido: %s", email_norm)
+        return ForgotPasswordResponse(
+            ok=True,
+            status='suspended',
+            message='Tu cuenta está suspendida. Contactanos a equipo@mail.smartbioscan.com'
+        )
+
+    nutri_id = row['id']
+    full_name = row.get('full_name') or ''
+
+    token = secrets.token_hex(32)
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+
+    db.client.table('beta_invites').insert({
+        'nutri_id': nutri_id,
+        'token': token,
+        'expires_at': expires_at,
+    }).execute()
+
+    frontend_url = os.getenv('FRONTEND_URL', 'https://app.smartbioscan.com')
+    set_pwd_url = f"{frontend_url}/set-password?token={token}"
+
+    email_id = send_password_reset_email(email_norm, full_name, set_pwd_url)
+
+    _logger.info(
+        "forgot-password OK nutri_id=%s email_sent=%s",
+        nutri_id, bool(email_id),
+    )
+
+    return ForgotPasswordResponse(
+        ok=True,
+        status='sent',
+        message=f'Te enviamos un email a {email_norm} con instrucciones para restablecer tu contraseña.'
+    )
 
 
 @app.get("/admin/waitlist")
