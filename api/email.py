@@ -105,6 +105,39 @@ def send_password_reset_email(to_email: str, nombre: str, set_password_url: str)
         return None
 
 
+def send_invite_reminder_email(to_email: str, nombre: str, set_password_url: str, expires_at_iso: str) -> Optional[str]:
+    """Email D — Recordatorio: tu invite vence en 48h. Retorna email_id o None."""
+    r = _get_resend()
+    if not r:
+        logger.warning("resend no instalado — Email D omitido para %s", to_email)
+        return None
+    if not r.api_key:
+        logger.warning("RESEND_API_KEY vacía — Email D omitido para %s", to_email)
+        return None
+    try:
+        from datetime import datetime as _dt
+        try:
+            expires_dt = _dt.fromisoformat(expires_at_iso.replace('Z', '+00:00'))
+            expires_human = expires_dt.strftime('%d/%m/%Y')
+        except Exception:
+            expires_human = 'pronto'
+
+        resp = r.Emails.send({
+            "from":     FROM_EMAIL,
+            "reply_to": REPLY_TO,
+            "to":       [to_email],
+            "subject":  "Tu acceso a SmartBioScan vence pronto",
+            "text":     _email_d_text(nombre, set_password_url, expires_human),
+            "html":     _email_d_html(nombre, set_password_url, expires_human),
+        })
+        eid = resp.id if hasattr(resp, "id") else (resp.get("id") if isinstance(resp, dict) else None)
+        logger.info("Email D enviado a %s id=%s", to_email, eid)
+        return eid
+    except Exception as exc:
+        logger.error("Error Email D → %s: %s", to_email, exc)
+        return None
+
+
 
 # ── Templates ─────────────────────────────────────────────────────────────────
 
@@ -305,6 +338,68 @@ def _email_c_html(nombre: str, url: str) -> str:
       </td></tr>
     </table>
   </td></tr>
+</table>
+</body>
+</html>"""
+
+
+def _email_d_text(nombre: str, url: str, expires_human: str) -> str:
+    return f"""Hola {nombre},
+
+Hace unos días te enviamos el acceso a SmartBioScan y todavía no entraste. Te escribo porque tu link de acceso vence el {expires_human}.
+
+El link sigue activo, solo tenés que hacer click acá para establecer tu contraseña y empezar:
+
+[ ESTABLECER MI CONTRASEÑA ]
+{url}
+
+Si perdiste el correo original o el link no te funciona, respondé este mismo mensaje y te mando uno nuevo.
+
+Si ya no te interesa probar SmartBioScan, también está bien — solo respondeme para sacarte de la lista y no molestarte más.
+
+Saludos,
+
+Lic. Diana Makk
+SmartBioScan"""
+
+
+def _email_d_html(nombre: str, url: str, expires_human: str) -> str:
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tu acceso a SmartBioScan vence pronto</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f6f8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f6f8;padding:32px 16px;">
+<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:#ffffff;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+<tr><td style="padding:32px 32px 16px 32px;text-align:center;border-bottom:1px solid #eef0f3;">
+<h1 style="margin:0;font-size:20px;font-weight:600;color:#0d7377;">SmartBioScan</h1>
+<p style="margin:4px 0 0 0;font-size:13px;color:#6b7280;">Análisis de composición corporal</p>
+</td></tr>
+<tr><td style="padding:32px;">
+<p style="margin:0 0 16px 0;font-size:16px;color:#1f2937;line-height:1.5;">Hola <strong>{nombre}</strong>,</p>
+<p style="margin:0 0 16px 0;font-size:15px;color:#374151;line-height:1.6;">Hace unos días te enviamos el acceso a SmartBioScan y todavía no entraste. Te escribo porque tu link de acceso vence el <strong>{expires_human}</strong>.</p>
+<p style="margin:0 0 24px 0;font-size:15px;color:#374151;line-height:1.6;">El link sigue activo, solo tenés que hacer click acá para establecer tu contraseña y empezar:</p>
+<table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 auto 16px auto;">
+<tr><td style="background-color:#0d7377;border-radius:6px;">
+<a href="{url}" style="display:inline-block;padding:14px 32px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">Establecer mi contraseña</a>
+</td></tr>
+</table>
+<p style="margin:0 0 32px 0;font-size:13px;color:#6b7280;text-align:center;">El link vence el {expires_human}.</p>
+<div style="margin:0 0 24px 0;padding:16px 20px;background-color:#f9fafb;border-left:3px solid #0d7377;border-radius:4px;">
+<p style="margin:0 0 8px 0;font-size:14px;color:#374151;line-height:1.6;">Si perdiste el correo original o el link no te funciona, respondé este mismo mensaje y te mando uno nuevo.</p>
+<p style="margin:0;font-size:14px;color:#4b5563;line-height:1.6;">Si ya no te interesa probar SmartBioScan, también está bien — solo respondeme para sacarte de la lista y no molestarte más.</p>
+</div>
+<p style="margin:0;font-size:15px;color:#1f2937;line-height:1.5;"><strong>Lic. Diana Makk</strong><br><span style="color:#6b7280;font-size:14px;">SmartBioScan</span></p>
+</td></tr>
+<tr><td style="padding:20px 32px;background-color:#f9fafb;border-top:1px solid #eef0f3;border-radius:0 0 8px 8px;text-align:center;">
+<p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.5;">Recibís este correo porque tenés un acceso pendiente a SmartBioScan.</p>
+</td></tr>
+</table>
+</td></tr>
 </table>
 </body>
 </html>"""

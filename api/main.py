@@ -36,7 +36,7 @@ load_dotenv()
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from api.payments import router as payments_router
-from api.email import send_waitlist_confirmation, send_welcome_email, send_password_reset_email
+from api.email import send_waitlist_confirmation, send_welcome_email, send_password_reset_email, send_invite_reminder_email
 from api.subscriptions import register_routes as _register_subscription_routes
 from api.error_logging import BackendErrorLoggingMiddleware
 
@@ -1296,6 +1296,27 @@ class SendPasswordResetResponse(BaseModel):
     email_sent: bool
 
 
+class InviteReminderPreviewItem(BaseModel):
+    invite_id: str
+    nutri_id: str
+    nutri_email: str
+    nutri_full_name: str
+    token: str
+    expires_at: str
+
+
+class InviteRemindersPreviewResponse(BaseModel):
+    items: list[InviteReminderPreviewItem]
+    total: int
+
+
+class SendInviteRemindersResponse(BaseModel):
+    ok: bool
+    sent_count: int
+    error_count: int
+    errors: list[str]  # Lista de emails que fallaron
+
+
 @app.post("/admin/nutris/{nutri_id}/send-password-reset",
           response_model=SendPasswordResetResponse)
 async def admin_send_password_reset(
@@ -1352,6 +1373,137 @@ async def admin_send_password_reset(
         invite_id=invite_id,
         expires_at=expires_at,
         email_sent=bool(email_id),
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN — Recordatorios de invites por expirar (Email D)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.get(
+    "/admin/invites/expiry-reminders-preview",
+    response_model=InviteRemindersPreviewResponse,
+)
+async def admin_invite_reminders_preview(
+    admin_id: str = Depends(get_admin_nutri),
+):
+    """
+    Lista los invites que necesitan recordatorio:
+    - No usados (used_at IS NULL)
+    - Vencen en próximas 48h (expires_at entre NOW y NOW + 48h)
+    - No recibieron recordatorio aún (reminder_sent_at IS NULL)
+    - Nutri no suspendido
+
+    Ordenados por expiración ascendente (los más urgentes primero).
+    """
+    from db import DB
+    db = DB()
+
+    cutoff_now = datetime.now(timezone.utc).isoformat()
+    cutoff_48h = (datetime.now(timezone.utc) + timedelta(hours=48)).isoformat()
+
+    res = (
+        db.client
+        .table('beta_invites')
+        .select('id, nutri_id, token, expires_at, nutris(email, full_name, is_suspended)')
+        .is_('used_at', 'null')
+        .is_('reminder_sent_at', 'null')
+        .gte('expires_at', cutoff_now)
+        .lte('expires_at', cutoff_48h)
+        .order('expires_at', desc=False)
+        .execute()
+    )
+
+    items = []
+    for row in res.data or []:
+        nutri = row.get('nutris') or {}
+        if nutri.get('is_suspended'):
+            continue
+        items.append(InviteReminderPreviewItem(
+            invite_id=row['id'],
+            nutri_id=row['nutri_id'],
+            nutri_email=nutri.get('email', ''),
+            nutri_full_name=nutri.get('full_name', ''),
+            token=row['token'],
+            expires_at=row['expires_at'],
+        ))
+
+    return InviteRemindersPreviewResponse(items=items, total=len(items))
+
+
+@app.post(
+    "/admin/invites/send-expiry-reminders",
+    response_model=SendInviteRemindersResponse,
+)
+async def admin_send_invite_reminders(
+    admin_id: str = Depends(get_admin_nutri),
+):
+    """
+    Manda Email D a todos los invites que califican (mismos criterios que preview).
+    Marca reminder_sent_at = now() para los que se enviaron exitosamente.
+
+    Es idempotente: si lo corrés dos veces seguidas, la segunda no manda nada
+    porque la primera marcó reminder_sent_at.
+    """
+    from db import DB
+    db = DB()
+
+    cutoff_now = datetime.now(timezone.utc).isoformat()
+    cutoff_48h = (datetime.now(timezone.utc) + timedelta(hours=48)).isoformat()
+
+    res = (
+        db.client
+        .table('beta_invites')
+        .select('id, token, expires_at, nutris(email, full_name, is_suspended)')
+        .is_('used_at', 'null')
+        .is_('reminder_sent_at', 'null')
+        .gte('expires_at', cutoff_now)
+        .lte('expires_at', cutoff_48h)
+        .execute()
+    )
+
+    rows = res.data or []
+    # Filtrar nutris suspendidos
+    rows = [r for r in rows if not ((r.get('nutris') or {}).get('is_suspended'))]
+    frontend_url = os.getenv('FRONTEND_URL', 'https://app.smartbioscan.com')
+
+    sent = 0
+    errors: list[str] = []
+
+    for row in rows:
+        nutri = row.get('nutris') or {}
+        email = (nutri.get('email') or '').strip()
+        full_name = nutri.get('full_name') or ''
+
+        if not email:
+            errors.append(f"invite {row['id']} sin email asociado")
+            continue
+
+        set_pwd_url = f"{frontend_url}/set-password?token={row['token']}"
+        email_id = send_invite_reminder_email(email, full_name, set_pwd_url, row['expires_at'])
+
+        if email_id:
+            try:
+                db.client.table('beta_invites').update({
+                    'reminder_sent_at': datetime.now(timezone.utc).isoformat(),
+                }).eq('id', row['id']).execute()
+                sent += 1
+            except Exception as exc:
+                _logger.error("Error marcando reminder_sent_at para %s: %s", row['id'], exc)
+                errors.append(f"{email} (envío OK pero falló marcar como enviado)")
+        else:
+            errors.append(email)
+
+    _logger.info(
+        "admin_send_invite_reminders admin=%s sent=%d errors=%d",
+        admin_id, sent, len(errors),
+    )
+
+    return SendInviteRemindersResponse(
+        ok=True,
+        sent_count=sent,
+        error_count=len(errors),
+        errors=errors,
     )
 
 
