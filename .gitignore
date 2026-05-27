@@ -10,3 +10,6 @@ reporte_*.pdf
 reporte_*.html
 .playwright/
 .claude/
+
+# Scratch local — bandeja de paso para .md que paso a Claude Code
+paracode/
