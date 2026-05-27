@@ -174,7 +174,7 @@ async def get_current_nutri(
     x_nutri_id: Optional[str] = Header(None, alias="X-Nutri-Id"),
 ) -> str:
     """Verifica JWT de Supabase y retorna el nutri_id del payload (sub)."""
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
 
     if x_nutri_id:
         _logger.warning(
@@ -368,7 +368,7 @@ async def get_admin_nutri(
     x_nutri_id: Optional[str] = Header(None, alias="X-Nutri-Id"),
 ) -> str:
     """Verifica JWT de Supabase y retorna nutri_id si el usuario tiene role=admin."""
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
 
     if x_nutri_id:
         _logger.warning(
@@ -431,6 +431,24 @@ _register_subscription_routes(app, get_current_nutri)
 
 _rate_hits: dict[str, list[float]] = defaultdict(list)
 _rate_lock = Lock()
+
+def _client_ip(request: Request) -> str:
+    """
+    Devuelve la IP real del cliente.
+
+    Railway pone la IP del cliente en X-Forwarded-For. El primer item
+    de la lista (separada por comas) es la IP del cliente original;
+    los siguientes son IPs de proxies intermedios.
+
+    Si el header no existe (request local o entorno sin proxy), cae a
+    request.client.host.
+    """
+    xff = request.headers.get('x-forwarded-for', '')
+    if xff:
+        # X-Forwarded-For: "client, proxy1, proxy2"
+        return xff.split(',')[0].strip()
+    return request.client.host if request.client else 'unknown'
+
 
 def _allow_rate(ip: str, limit: int = 5, window: int = 60) -> bool:
     """Retorna True si el request está dentro del límite. 5/min por defecto."""
@@ -1015,7 +1033,7 @@ async def login_hint(request: Request, body: LoginHintRequest):
     Retorna 'not_registered' si el email no existe en nutris, 'wrong_password' si sí existe.
     Rate-limited: 5 requests/min por IP.
     """
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     _logger.info("login-hint from %s domain=%s", ip, (body.email or '').split('@')[-1])
 
     if not _allow_rate(ip, limit=5, window=60):
@@ -1043,7 +1061,7 @@ async def forgot_password(request: Request, body: ForgotPasswordRequest):
     en nutris — decisión consciente para una beta cerrada B2B donde
     los usuarios suelen confundir SmartBioScan con MyTanita.
     """
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     email_norm = (body.email or "").strip().lower()
     _logger.info(
         "forgot-password from %s email_domain=%s",
@@ -1467,7 +1485,7 @@ async def log_frontend_error(body: FrontendErrorRequest, request: Request):
     Endpoint público (sin auth) porque queremos capturar errores pre-login.
     Rate-limited a 30/min por IP.
     """
-    ip = request.client.host if request.client else "unknown"
+    ip = _client_ip(request)
     if _fe_error_rate_limited(ip):
         return {"ok": False, "reason": "rate_limited"}
 

@@ -34,6 +34,18 @@ _MAX_BODY_LEN = 2000      # request_body, response_body
 _MAX_STACK_LEN = 10000    # stack_trace
 
 
+def _client_ip(request: Request) -> Optional[str]:
+    """
+    IP real del cliente. Detrás del proxy de Railway, request.client.host
+    devuelve la IP del proxy interno (100.64.0.X), no la del cliente.
+    El primer item de X-Forwarded-For es la IP original.
+    """
+    xff = request.headers.get('x-forwarded-for', '')
+    if xff:
+        return xff.split(',')[0].strip()
+    return request.client.host if request.client else None
+
+
 def _sanitize_body(raw_bytes: bytes) -> str:
     """
     Convierte body a string sanitizado. Si es JSON, oculta campos sensibles.
@@ -202,7 +214,7 @@ class BackendErrorLoggingMiddleware(BaseHTTPMiddleware):
                 "request_body":   _sanitize_body(body_bytes),
                 "response_body":  _sanitize_body(response_body or b""),
                 "user_agent":     _truncate(request.headers.get("user-agent"), 500),
-                "ip_address":     request.client.host if request.client else None,
+                "ip_address":     _client_ip(request),
             }
 
             db.client.table("backend_errors").insert(row).execute()
