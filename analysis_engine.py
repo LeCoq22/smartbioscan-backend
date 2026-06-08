@@ -908,15 +908,15 @@ def analyze(patient: PatientInfo,
     evol    = compute_evolution(measurements)
 
     _physique_labels = {
-        1: "Obeso",
-        2: "Sobrepeso, masa baja",
-        3: "Sobrepeso, masa alta",
-        4: "Estándar, masa baja",
-        5: "Estándar",
-        6: "Estándar, masa alta",
+        1: "Obeso Oculto",
+        2: "Obeso",
+        3: "Obeso Musculoso",
+        4: "Masa Muscular Deficiente",
+        5: "Ideal",
+        6: "Saludable, Musculoso",
         7: "Delgado",
-        8: "Delgado y musculoso",
-        9: "Muy musculoso",
+        8: "Delgado Estándar",
+        9: "Delgado Musculoso",
     }
     pr = latest.physique_rating
     physique = {
