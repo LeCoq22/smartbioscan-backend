@@ -384,8 +384,18 @@ def csv_row_to_dict(row: pd.Series, cols: list[str]) -> dict:
                 return row.get(c)
         return None
 
+    # Fecha: priorizar '_date' (ya parseado por pd.to_datetime con errors='coerce'
+    # en parse_tanita_csv). pd.isna() atrapa tanto NaT como NaN float (el viejo
+    # bug "nan"). strftime evita el truncado a ciegas que generaba "22-12-03 0".
+    _raw_date = _get_str('_date', 'Date')
+    if _raw_date is not None and not pd.isna(_raw_date):
+        _ts = pd.to_datetime(_raw_date, errors='coerce')
+        _date_val = None if pd.isna(_ts) else _ts.strftime('%Y-%m-%d')
+    else:
+        _date_val = None
+
     return {
-        'date':              str(_get_str('Date', '_date'))[:10] if _get_str('Date', '_date') else None,
+        'date':              _date_val,
         'weight_kg':         _get('Weight_kg'),
         'bmi':               _get('BMI'),
         'body_fat_pct':      _get('Body_Fat_pct'),
