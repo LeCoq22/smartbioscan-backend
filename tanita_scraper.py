@@ -165,36 +165,59 @@ async def verify_and_list_profiles(email: str, password: str) -> dict:
     """
     Hace login y devuelve la lista de perfiles de la cuenta.
     Retorna: {ok: bool, profiles: [{profile_id, profile_name}], error: str|None}
+
+    El arranque de Chromium (launch/new_context/new_page) va DENTRO del try para
+    que un fallo de infraestructura del browser en Railway se devuelva como
+    ok=false con error='browser_unavailable' en vez de propagarse como 500.
+    Reintenta el arranque del browser 1 vez ante fallo transitorio.
     """
+    last_browser_error = None
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=['--disable-features=Translate']
-        )
-        context = await browser.new_context(
-            locale='en-US',
-            user_agent=(
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-                'AppleWebKit/537.36 (KHTML, like Gecko) '
-                'Chrome/120.0.0.0 Safari/537.36'
-            )
-        )
-        page = await context.new_page()
-        try:
-            ok = await _do_login(page, email, password)
-            if not ok:
-                return {'ok': False, 'profiles': [], 'error': 'login_failed'}
+        for intento in range(2):  # 1 intento + 1 reintento
+            browser = None
+            context = None
+            try:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=['--disable-features=Translate']
+                )
+                context = await browser.new_context(
+                    locale='en-US',
+                    user_agent=(
+                        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+                        'AppleWebKit/537.36 (KHTML, like Gecko) '
+                        'Chrome/120.0.0.0 Safari/537.36'
+                    )
+                )
+                page = await context.new_page()
 
-            profiles = await _list_profiles_on_page(page)
-            return {'ok': True, 'profiles': profiles, 'error': None}
+                ok = await _do_login(page, email, password)
+                if not ok:
+                    return {'ok': False, 'profiles': [], 'error': 'login_failed'}
 
-        except PlaywrightTimeout as e:
-            return {'ok': False, 'profiles': [], 'error': f'timeout: {e}'}
-        except Exception as e:
-            return {'ok': False, 'profiles': [], 'error': str(e)}
-        finally:
-            await context.close()
-            await browser.close()
+                profiles = await _list_profiles_on_page(page)
+                return {'ok': True, 'profiles': profiles, 'error': None}
+
+            except PlaywrightTimeout as e:
+                return {'ok': False, 'profiles': [], 'error': f'timeout: {e}'}
+            except Exception as e:
+                # Fallo de arranque/operación del browser. Guardar y reintentar.
+                last_browser_error = e
+            finally:
+                if context is not None:
+                    try:
+                        await context.close()
+                    except Exception:
+                        pass
+                if browser is not None:
+                    try:
+                        await browser.close()
+                    except Exception:
+                        pass
+
+    # Si llegó acá, los 2 intentos fallaron por problema de browser.
+    return {'ok': False, 'profiles': [],
+            'error': 'browser_unavailable'}
 
 
 async def verify_login(email: str, password: str) -> dict:
