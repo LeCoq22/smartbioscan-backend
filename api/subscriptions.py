@@ -45,7 +45,7 @@ PLANS: dict[str, dict] = {
     },
     "bioscan_plus_mensual": {
         "title": "BioScan Plus — Mensual",
-        "unit_price": 55000.0,
+        "unit_price": 65000.0,
         "months": 1,
         "max_reports_month": 100,
         "max_patients": 40,
@@ -54,7 +54,7 @@ PLANS: dict[str, dict] = {
     },
     "bioscan_basico_semestral": {
         "title": "BioScan Básico — Semestral",
-        "unit_price": 122400.0,
+        "unit_price": 142500.0,
         "months": 6,
         "max_reports_month": 30,
         "max_patients": 15,
@@ -63,7 +63,7 @@ PLANS: dict[str, dict] = {
     },
     "bioscan_plus_semestral": {
         "title": "BioScan Plus — Semestral",
-        "unit_price": 274800.0,
+        "unit_price": 325000.0,
         "months": 6,
         "max_reports_month": 100,
         "max_patients": 40,
