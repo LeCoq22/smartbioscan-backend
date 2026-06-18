@@ -1180,6 +1180,21 @@ async def approve_waitlist(
         # 2. Crear nutri + invite + mandar email
         result = _create_nutri_and_invite(db, user_id, email, nombre, 'waitlist', profesion)
 
+        # 2.b — Override: nuevos aprobados por waitlist son free_trial 15 días (cupo 10/15).
+        # El helper crea como beta 50/20 (legacy). Pisamos los valores acá para que
+        # cuando el nutri entre por primera vez ya tenga el trial configurado.
+        # El welcome email no menciona cupos, así que mandarlo antes del UPDATE es safe.
+        trial_start = datetime.now(timezone.utc)
+        trial_end   = trial_start + timedelta(days=15)
+        db.client.table('nutris').update({
+            'subscription_type':   'free_trial',
+            'subscription_status': 'active',
+            'subscription_start':  trial_start.isoformat(),
+            'subscription_end':    trial_end.isoformat(),
+            'max_patients':        10,
+            'max_reports_month':   15,
+        }).eq('id', user_id).execute()
+
         # 3. Marcar waitlist como aprobada
         db.client.table('waitlist').update({
             'status':      'approved',
