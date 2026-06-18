@@ -274,6 +274,7 @@ class WaitlistRequest(BaseModel):
     nombre: str
     email: str
     profesion: Optional[str] = None
+    telefono: Optional[str] = None
 
 class WaitlistResponse(BaseModel):
     success: bool
@@ -913,6 +914,7 @@ async def join_waitlist(body: WaitlistRequest):
             'nombre':    body.nombre.strip(),
             'email':     body.email.strip().lower(),
             'profesion': body.profesion,
+            'telefono':  body.telefono,
         }).execute()
     except Exception as exc:
         err = str(exc).lower()
