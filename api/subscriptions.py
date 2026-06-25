@@ -14,6 +14,7 @@ Endpoints registrados:
 import calendar
 import logging
 import os
+import re
 from datetime import date, datetime, timezone
 from typing import Optional
 
@@ -25,6 +26,8 @@ from pydantic import BaseModel
 logger = logging.getLogger("smartbioscan.subscriptions")
 
 router = APIRouter(prefix="/api/subscriptions", tags=["subscriptions"])
+
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 
 # ─────────────────────────────────────────────
@@ -79,6 +82,7 @@ PLANS: dict[str, dict] = {
 
 class InitSubscriptionRequest(BaseModel):
     plan_id: str
+    payer_email: Optional[str] = None   # email de la cuenta MP, si difiere del email del nutri
 
 
 class InitSubscriptionResponse(BaseModel):
@@ -367,6 +371,20 @@ def register_routes(app, get_current_nutri_dep):
             raise HTTPException(status_code=404, detail="Nutri no encontrado")
 
         payer_email = nutri_res.data["email"]
+        # Si el nutri indicó el email de su cuenta de MercadoPago (porque difiere del
+        # email de SmartBioScan), usamos ese para que MP no lo trabe en el checkout.
+        # La reconciliación sigue por external_reference=nutri_id, así que el email NO
+        # afecta a qué nutri se asocia el pago. Si llega basura, caemos al email del nutri.
+        if body.payer_email:
+            candidate = body.payer_email.strip().lower()
+            if _EMAIL_RE.match(candidate):
+                payer_email = candidate
+            else:
+                logger.warning(
+                    "payer_email inválido recibido para nutri=%s — usando email del nutri",
+                    nutri_id,
+                )
+
         frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
 
         # En sandbox de MP, MP exige que payer_email sea de un test_user de su panel.
