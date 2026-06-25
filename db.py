@@ -110,14 +110,8 @@ class DB:
         Crea un nuevo paciente.
         data: {full_name, date_of_birth, sex, height_cm, phone_whatsapp}
         """
-        # Verificar límite de pacientes
-        nutri = self.get_nutri(nutri_id)
-        active_count = self.count_active_patients(nutri_id)
-        if active_count >= nutri['max_patients']:
-            raise ValueError(
-                f"Límite de pacientes alcanzado ({active_count}/{nutri['max_patients']}). "
-                "Actualizá tu plan para agregar más."
-            )
+        # La limitación de planes es solo por reportes/mes (can_generate_report),
+        # no por cantidad de pacientes. El gate de max_patients quedó latente.
         payload = {**data, 'nutri_id': nutri_id}
         res = self.client.table('patients').insert(payload).execute()
         return res.data[0]

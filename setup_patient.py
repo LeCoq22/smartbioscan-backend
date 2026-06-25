@@ -41,13 +41,8 @@ def main():
         sys.exit(1)
     print(f"✓ Nutri: {nutri['full_name']}")
 
-    # Verificar quota de pacientes
-    active = db.count_active_patients(args.nutri_id)
-    max_p  = nutri['max_patients']
-    if active >= max_p:
-        print(f"✗ Límite de pacientes alcanzado ({active}/{max_p})")
-        sys.exit(1)
-    print(f"  Pacientes activos: {active}/{max_p}")
+    # La limitación de planes es solo por reportes/mes, no por pacientes.
+    # El gate de max_patients quedó latente (igual que en create_patient).
 
     # Crear paciente (sin datos de altura/edad aún — los leerá del primer scrape)
     patient = db.create_patient(args.nutri_id, {
