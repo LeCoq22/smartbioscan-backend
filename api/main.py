@@ -894,6 +894,29 @@ def _create_nutri_and_invite(db, user_id: str, email: str, full_name: str,
     return {'invite_id': invite_id, 'token': token, 'expires_at': expires_at}
 
 
+def _find_auth_user_id_by_email(db, email: str) -> Optional[str]:
+    """
+    Busca un auth user por email (case-insensitive) vía SDK admin con service key.
+    Devuelve el id si existe, None si no.
+
+    Pagina porque el SDK (supabase-auth) no permite filtrar por email; corta en
+    la primera página vacía. Necesario para no chocar con usuarios que se
+    registraron por Google/OAuth (su auth.users se crea por fuera del onboarding).
+    """
+    target = (email or '').strip().lower()
+    if not target:
+        return None
+    per_page = 200
+    for page in range(1, 1001):  # cota defensiva contra loop infinito
+        users = db.client.auth.admin.list_users(page=page, per_page=per_page)
+        if not users:
+            return None
+        for u in users:
+            if (getattr(u, 'email', None) or '').lower() == target:
+                return u.id
+    return None
+
+
 @app.post("/api/waitlist", response_model=WaitlistResponse)
 async def join_waitlist(body: WaitlistRequest):
     """
@@ -1167,15 +1190,27 @@ async def approve_waitlist(
     nombre   = wl['nombre']
     profesion = wl.get('profesion')
     user_id  = None
+    created_auth = False
 
     try:
-        # 1. Crear auth user (email ya confirmado, password temporal descartado)
-        auth_resp = db.client.auth.admin.create_user({
-            "email":         email,
-            "password":      secrets.token_hex(24),
-            "email_confirm": True,
-        })
-        user_id = auth_resp.user.id
+        # 1. Resolver auth user: reusar si ya existe (caso registro por Google/OAuth,
+        #    que crea el auth.users por fuera de este flujo), si no, crearlo.
+        user_id = _find_auth_user_id_by_email(db, email)
+        if user_id:
+            # Ya existe en Auth: ¿ya está onboardeado (tiene fila en nutris)?
+            if db.client.table('nutris').select('id').eq('id', user_id).execute().data:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Este email ya tiene una cuenta de SmartBioScan",
+                )
+        else:
+            auth_resp = db.client.auth.admin.create_user({
+                "email":         email,
+                "password":      secrets.token_hex(24),
+                "email_confirm": True,
+            })
+            user_id = auth_resp.user.id
+            created_auth = True
 
         # 2. Crear nutri + invite + mandar email
         result = _create_nutri_and_invite(db, user_id, email, nombre, 'waitlist', profesion)
@@ -1214,7 +1249,9 @@ async def approve_waitlist(
     except HTTPException:
         raise
     except Exception as exc:
-        if user_id:
+        # Solo limpiar el auth user si lo creamos NOSOTROS en este flujo.
+        # Si reusamos uno de OAuth, borrarlo destruiría la cuenta de Google del nutri.
+        if user_id and created_auth:
             try:
                 db.client.auth.admin.delete_user(user_id)
             except Exception:
@@ -1267,13 +1304,19 @@ async def create_admin_nutri(
         raise HTTPException(status_code=409, detail="Ya existe un Nutri con ese email")
 
     user_id = None
+    created_auth = False
     try:
-        auth_resp = db.client.auth.admin.create_user({
-            "email":         body.email.lower(),
-            "password":      secrets.token_hex(24),
-            "email_confirm": True,
-        })
-        user_id = auth_resp.user.id
+        # Resolver auth user: reusar si ya existe (registro por Google/OAuth), si no crear.
+        # El nutris-ya-existe se chequeó arriba (409); acá sólo importa el auth.users.
+        user_id = _find_auth_user_id_by_email(db, body.email.lower())
+        if not user_id:
+            auth_resp = db.client.auth.admin.create_user({
+                "email":         body.email.lower(),
+                "password":      secrets.token_hex(24),
+                "email_confirm": True,
+            })
+            user_id = auth_resp.user.id
+            created_auth = True
 
         result = _create_nutri_and_invite(
             db, user_id, body.email.lower(), body.full_name, 'manual', body.profesion
@@ -1294,7 +1337,8 @@ async def create_admin_nutri(
     except HTTPException:
         raise
     except Exception as exc:
-        if user_id:
+        # Solo limpiar el auth user si lo creamos NOSOTROS (no si reusamos uno de OAuth).
+        if user_id and created_auth:
             try:
                 db.client.auth.admin.delete_user(user_id)
             except Exception:
