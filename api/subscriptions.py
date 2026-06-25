@@ -194,6 +194,9 @@ async def handle_subscription_preapproval(sdk: mercadopago.SDK, preapproval_id: 
             "mp_payer_id":                     mp_payer_id or None,
             "max_reports_month":               plan["max_reports_month"],
             "max_patients":                    plan["max_patients"],
+            # Estrena el cupo del mes al pagar: no arrastra reportes de la beta/trial.
+            "reports_this_month":              0,
+            "reports_month_reset":             subscription_start.isoformat(),
         }).eq("id", nutri_id).execute()
 
         logger.info(
