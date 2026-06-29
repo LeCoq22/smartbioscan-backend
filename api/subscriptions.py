@@ -157,7 +157,7 @@ async def handle_subscription_preapproval(sdk: mercadopago.SDK, preapproval_id: 
     db = DB()
 
     res = (db.client.table("nutris")
-           .select("id, mp_preapproval_id, subscription_status, subscription_end")
+           .select("id, mp_preapproval_id, subscription_status, subscription_end, subscription_cancelled_at")
            .eq("id", external_reference)
            .execute())
 
@@ -215,16 +215,45 @@ async def handle_subscription_preapproval(sdk: mercadopago.SDK, preapproval_id: 
         }
 
     elif status in ("cancelled", "paused"):
+        today = date.today()
+        sub_end_raw = nutri.get("subscription_end")
+        acceso_vigente = bool(sub_end_raw) and date.fromisoformat(str(sub_end_raw)[:10]) >= today
+        es_activa_paga = nutri.get("subscription_status") == "active" and acceso_vigente
+
+        # Guarda de orden: evento de un preapproval que ya no es el vigente del nutri
+        # (ej. resuscribió con uno nuevo y MP canceló el viejo). No tocar.
+        if nutri.get("mp_preapproval_id") and nutri.get("mp_preapproval_id") != preapproval_id:
+            logger.info(
+                "preapproval %s no es el vigente (nutri=%s, actual=%s) — sin acción",
+                preapproval_id, nutri_id, nutri.get("mp_preapproval_id"),
+            )
+            return {"ok": True, "nutri_id": nutri_id, "detail": "stale_preapproval"}
+
+        # paused NUNCA es una baja: es reversible/transitorio. No degradar.
+        if status == "paused":
+            logger.info("preapproval %s status=paused — sin acción (no es cancelación)", preapproval_id)
+            return {"ok": True, "nutri_id": nutri_id, "detail": "paused_no_action"}
+
+        # status == "cancelled": si la sub está activa+paga y NO hay cancelled_at previo
+        # (que SÍ deja /cancel en una baja real), es una pisada sospechosa → ignorar.
+        baja_real_iniciada = nutri.get("subscription_cancelled_at") is not None
+        if es_activa_paga and not baja_real_iniciada:
+            logger.warning(
+                "preapproval %s status=cancelled IGNORADO: nutri=%s activa+paga (end=%s) sin cancelled_at — posible pisada",
+                preapproval_id, nutri_id, sub_end_raw,
+            )
+            return {"ok": True, "nutri_id": nutri_id, "detail": "cancelled_ignored_suspicious"}
+
+        # Cancelación legítima: dejar cancelled y registrar cancelled_at si faltaba.
         db.client.table("nutris").update({
-            "subscription_status": "cancelled",
+            "subscription_status":       "cancelled",
+            "subscription_cancelled_at": nutri.get("subscription_cancelled_at")
+                                          or datetime.now(timezone.utc).isoformat(),
             # subscription_end NO se toca: acceso hasta que venza
         }).eq("id", nutri_id).execute()
 
-        logger.info(
-            "subscription_preapproval %s: nutri=%s status=%s",
-            preapproval_id, nutri_id, status,
-        )
-        return {"ok": True, "nutri_id": nutri_id, "detail": f"subscription_{status}"}
+        logger.info("subscription cancelled (real): nutri=%s preapproval=%s", nutri_id, preapproval_id)
+        return {"ok": True, "nutri_id": nutri_id, "detail": "subscription_cancelled"}
 
     else:
         logger.info("subscription_preapproval %s status=%s — sin acción", preapproval_id, status)
