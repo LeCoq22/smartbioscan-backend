@@ -343,6 +343,17 @@ class CreateAdminNutriResponse(BaseModel):
     expires_at: Optional[str] = None
     set_password_url: Optional[str] = None
 
+class GrantCourtesyRequest(BaseModel):
+    months: int
+    reason: str
+
+class GrantCourtesyResponse(BaseModel):
+    ok: bool
+    nutri_id: str
+    subscription_type: str
+    subscription_end: str
+    courtesy_reason: str
+
 class NutriMeResponse(BaseModel):
     id: str
     email: str
@@ -1434,6 +1445,66 @@ async def admin_send_password_reset(
         invite_id=invite_id,
         expires_at=expires_at,
         email_sent=bool(email_id),
+    )
+
+
+_COURTESY_REASONS = {"Compró Balanza", "Compró Protocolo", "Otros"}
+
+
+@app.post("/admin/nutris/{nutri_id}/grant-courtesy", response_model=GrantCourtesyResponse)
+async def admin_grant_courtesy(
+    nutri_id: str,
+    body: GrantCourtesyRequest,
+    admin_id: str = Depends(get_admin_nutri),
+):
+    """
+    Otorga acceso de CORTESÍA: subscription_type='invitation', plan Básico (30/15),
+    por 1, 2 o 3 meses. Uso: Diana regala meses gratis (ej. compra de balanza/protocolo).
+    'invitation' NO cuenta como ingreso (a diferencia de 'monthly') y no resetea cupo
+    por aniversario, así que el cupo cuenta para todo el período de cortesía.
+    """
+    if body.months not in (1, 2, 3):
+        raise HTTPException(status_code=422, detail="months debe ser 1, 2 o 3")
+    reason = (body.reason or "").strip()
+    if reason not in _COURTESY_REASONS:
+        raise HTTPException(
+            status_code=422,
+            detail="reason inválido. Opciones: Compró Balanza, Compró Protocolo, Otros",
+        )
+
+    from db import DB
+    db = DB()
+
+    nutri = db.client.table('nutris').select('id').eq('id', nutri_id).single().execute()
+    if not nutri.data:
+        raise HTTPException(status_code=404, detail="Nutri no encontrado")
+
+    today = datetime.now(timezone.utc).date()
+    end = today + timedelta(days=body.months * 30)
+
+    db.client.table('nutris').update({
+        'subscription_type':   'invitation',
+        'subscription_status': 'active',
+        'subscription_start':  today.isoformat(),
+        'subscription_end':    end.isoformat(),
+        'max_patients':        15,
+        'max_reports_month':   30,      # SIEMPRE Básico (no hay opción Plus)
+        'reports_this_month':  0,       # arranca limpio el mes de cortesía
+        'reports_month_reset': today.isoformat(),
+        'courtesy_reason':     reason,
+    }).eq('id', nutri_id).execute()
+
+    _logger.info(
+        "admin_grant_courtesy admin=%s target_nutri=%s months=%s reason=%s end=%s",
+        admin_id, nutri_id, body.months, reason, end,
+    )
+
+    return GrantCourtesyResponse(
+        ok=True,
+        nutri_id=nutri_id,
+        subscription_type='invitation',
+        subscription_end=end.isoformat(),
+        courtesy_reason=reason,
     )
 
 
