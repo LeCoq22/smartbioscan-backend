@@ -71,6 +71,12 @@ class TanitaMeasurement:
 
     heart_rate: Optional[float] = None
 
+    # Método de captura de la medición.
+    #   'scraper' = MyTanita (histórico)  |  'app' = Nativa (BLE nativo)
+    # Default 'scraper' para no alterar el path actual ni los sitios que
+    # ya construyen TanitaMeasurement desde el CSV del scraper.
+    source: str = 'scraper'
+
 
 # ─────────────────────────────────────────────
 # TABLAS DE REFERENCIA
@@ -820,29 +826,20 @@ def compute_evolution(measurements: list[TanitaMeasurement]) -> dict:
     """
     Calcula tendencias entre primera y última medición.
     Retorna deltas para peso, músculo, % grasa y TMB.
+
+    Source-aware: el nivel de actividad reescribe la lectura completa del
+    cuerpo (grasa, músculo, agua, TMB). Comparar una medición 'scraper'
+    (MyTanita, nivel desconocido) contra una 'app' (Nativa, nivel propio)
+    produciría un delta que es artefacto del método, no del cuerpo. Por eso
+    los deltas se calculan SOLO dentro del tramo más reciente del mismo
+    `source`. Si ese tramo tiene una sola medición, no se muestran deltas:
+    se informa el cambio de método. El gráfico conserva toda la historia
+    (con `source` por punto) como contexto.
     """
     if len(measurements) < 2:
         return {}
 
-    first = measurements[0]
-    last  = measurements[-1]
-
-    fat_first = round(first.weight_kg * first.body_fat_pct / 100, 2)
-    fat_last  = round(last.weight_kg  * last.body_fat_pct  / 100, 2)
-
-    delta_weight  = round(last.weight_kg    - first.weight_kg, 2)
-    delta_muscle  = round(last.muscle_mass_kg - first.muscle_mass_kg, 2)
-    delta_fat_pct = round(last.body_fat_pct - first.body_fat_pct, 1)
-    delta_tmb     = round(last.bmr_kcal     - first.bmr_kcal, 0)
-
-    def trend_label(delta):
-        if delta > 0:
-            return f"+{delta} ↑"
-        elif delta < 0:
-            return f"{delta} ↓"
-        return "= Sin cambio"
-
-    # Construir series para gráfico
+    # Serie completa para el gráfico (todos los puntos, con su método).
     series = []
     for mes in measurements:
         fat_kg = round(mes.weight_kg * mes.body_fat_pct / 100, 2)
@@ -853,9 +850,49 @@ def compute_evolution(measurements: list[TanitaMeasurement]) -> dict:
             'fat_pct': mes.body_fat_pct,
             'fat_kg': fat_kg,
             'tmb': mes.bmr_kcal,
+            'source': getattr(mes, 'source', 'scraper'),
         })
 
-    # Detectar mejora consistente
+    # Tramo homogéneo más reciente: sufijo de mediciones que comparten el
+    # `source` de la última. Los deltas se calculan sobre este tramo.
+    last_source = getattr(measurements[-1], 'source', 'scraper')
+    run_start = len(measurements) - 1
+    while run_start > 0 and \
+            getattr(measurements[run_start - 1], 'source', 'scraper') == last_source:
+        run_start -= 1
+    current_run  = measurements[run_start:]
+    source_mixed = run_start > 0  # hay historia previa de otro método
+
+    # El método vigente todavía no tiene 2 mediciones: no se puede comparar
+    # sin cruzar el borde de método. No mostramos deltas, informamos.
+    if len(current_run) < 2:
+        return {
+            'source_mixed':   source_mixed,
+            'method_current': last_source,
+            'method_note': (
+                "Primera medición con este método — no se compara con el "
+                "historial anterior por cambio de método de medición."
+            ),
+            'trend_note': "",
+            'series':     series,
+        }
+
+    first = current_run[0]
+    last  = current_run[-1]
+
+    delta_weight  = round(last.weight_kg      - first.weight_kg, 2)
+    delta_muscle  = round(last.muscle_mass_kg - first.muscle_mass_kg, 2)
+    delta_fat_pct = round(last.body_fat_pct   - first.body_fat_pct, 1)
+    delta_tmb     = round(last.bmr_kcal       - first.bmr_kcal, 0)
+
+    def trend_label(delta):
+        if delta > 0:
+            return f"+{delta} ↑"
+        elif delta < 0:
+            return f"{delta} ↓"
+        return "= Sin cambio"
+
+    # Detectar mejora consistente (solo dentro del tramo homogéneo).
     improved = (delta_muscle > 0 and delta_fat_pct < 0 and delta_tmb > 0)
     trend_note = "✓ Mejora consistente: menos grasa, más músculo, mejor TMB." if improved else ""
 
@@ -871,6 +908,8 @@ def compute_evolution(measurements: list[TanitaMeasurement]) -> dict:
         'fat_pct_label': trend_label(delta_fat_pct),
         'tmb_label':     trend_label(int(delta_tmb)),
         'trend_note':    trend_note,
+        'source_mixed':  source_mixed,
+        'method_current': last_source,
         'series':        series,
     }
 
