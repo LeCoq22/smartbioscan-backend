@@ -447,3 +447,40 @@ class DB:
             return False
         d = res.data
         return bool(d.get('height_cm') and d.get('date_of_birth') and d.get('sex'))
+
+    # ── Native Measurements (balanza Tanita RD-545, app móvil) ─────────────────
+
+    def get_owned_patient_status(self, patient_id: str,
+                                  nutri_id: str) -> Optional[dict]:
+        """
+        Retorna {'id', 'is_active'} del paciente SOLO si pertenece al nutri.
+        El backend usa service_role (bypassa RLS), así que filtramos explícitamente
+        por id + nutri_id. None si el paciente no existe o es de otro nutri.
+        """
+        res = (self.client.table('patients')
+               .select('id, is_active')
+               .eq('id', patient_id)
+               .eq('nutri_id', nutri_id)
+               .limit(1)
+               .execute())
+        return res.data[0] if res.data else None
+
+    def insert_native_measurement(self, row: dict) -> dict:
+        """
+        Inserta una medición nativa. Deja propagar la excepción del cliente
+        Postgres en caso de conflicto unique (23505) — el endpoint la maneja.
+        Retorna la fila insertada (con 'id').
+        """
+        res = self.client.table('native_measurements').insert(row).execute()
+        return res.data[0]
+
+    def get_native_measurement_by_idempotency(self, nutri_id: str,
+                                               idempotency_key: str) -> Optional[dict]:
+        """Busca una medición nativa ya persistida por (nutri_id, idempotency_key)."""
+        res = (self.client.table('native_measurements')
+               .select('id')
+               .eq('nutri_id', nutri_id)
+               .eq('idempotency_key', idempotency_key)
+               .limit(1)
+               .execute())
+        return res.data[0] if res.data else None

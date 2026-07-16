@@ -38,6 +38,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from api.payments import router as payments_router
 from api.email import send_waitlist_confirmation, send_welcome_email, send_password_reset_email, send_invite_reminder_email
 from api.subscriptions import register_routes as _register_subscription_routes
+from api.native_measurements import register_routes as _register_native_measurement_routes
 from api.error_logging import BackendErrorLoggingMiddleware
 
 
@@ -435,6 +436,7 @@ from api.admin_regenerate import register_routes as _register_admin_regen_routes
 _register_admin_regen_routes(app, get_admin_nutri)
 
 _register_subscription_routes(app, get_current_nutri)
+_register_native_measurement_routes(app, get_current_nutri)
 
 
 # ─────────────────────────────────────────────
