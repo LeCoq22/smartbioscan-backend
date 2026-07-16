@@ -272,6 +272,16 @@ def test_invalid_parser_version_422():
     assert resp.status_code == 422
 
 
+def test_parser_v3_accepted():
+    db = _active_patient_db()
+    resp = _post(
+        _client(), db,
+        payload=_payload(parser_version="b010-tanita-tags-v3"),
+    )
+    assert resp.status_code == 200, resp.text
+    assert db.inserted_rows[0]["parser_version"] == "b010-tanita-tags-v3"
+
+
 # ── 11. captured_at inválido / futuro ───────────────────────────────────────
 
 def test_captured_at_invalid_422():

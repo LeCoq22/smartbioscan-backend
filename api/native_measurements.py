@@ -33,7 +33,10 @@ _logger = logging.getLogger("smartbioscan.native_measurements")
 # ─────────────────────────────────────────────
 
 _SOURCE_ALLOWED         = "tanita_rd545"
-_PARSER_VERSION_ALLOWED = "b010-tanita-tags-v2"
+_PARSER_VERSIONS_ALLOWED = {
+    "b010-tanita-tags-v2",  # compatibilidad con capturas ya persistidas
+    "b010-tanita-tags-v3",  # sign-magnitude correcto + PhysiqueRating derivado
+}
 _SEX_ALLOWED            = {"male", "female"}
 _FIGURE_ALLOWED         = {"normal", "athlete"}
 _ACTIVITY_ALLOWED       = {"sedentary", "moderate", "active", "athlete"}
@@ -86,6 +89,12 @@ class NativeMeasurementIn(BaseModel):
 class NativeMeasurementResponse(BaseModel):
     ok: bool
     measurement_id: str
+    created: bool
+
+
+class NativeReportResponse(BaseModel):
+    ok: bool
+    report_id: str
     created: bool
 
 
@@ -250,7 +259,7 @@ def register_routes(app, get_current_nutri_dep):
         # ── 2. Allowlists de source / parser_version ──
         if body.source != _SOURCE_ALLOWED:
             raise _reject("source inválido")
-        if body.parser_version != _PARSER_VERSION_ALLOWED:
+        if body.parser_version not in _PARSER_VERSIONS_ALLOWED:
             raise _reject("parser_version inválido")
 
         # ── 3. patient_id UUID ──
@@ -317,6 +326,20 @@ def register_routes(app, get_current_nutri_dep):
             ok=True,
             measurement_id=str(inserted["id"]),
             created=True,
+        )
+
+    @router.post("/{measurement_id}/report", response_model=NativeReportResponse)
+    async def generate_native_report(
+        measurement_id: str,
+        nutri_id: str = Depends(get_current_nutri_dep),
+    ):
+        measurement_uuid = _normalize_uuid(measurement_id, "measurement_id")
+        from native_report_pipeline import run_native_report_pipeline
+        result = await run_native_report_pipeline(measurement_uuid, nutri_id)
+        return NativeReportResponse(
+            ok=True,
+            report_id=result["report_id"],
+            created=not result.get("skipped", False),
         )
 
     app.include_router(router)

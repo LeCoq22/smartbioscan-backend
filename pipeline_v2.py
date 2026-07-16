@@ -18,6 +18,8 @@ Modos de uso:
      python3 pipeline_v2.py --nutri-id <uuid> --batch
 """
 
+from __future__ import annotations
+
 import asyncio, argparse, logging, sys, os, tempfile, time
 from datetime import datetime, date
 from dotenv import load_dotenv

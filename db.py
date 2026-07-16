@@ -177,7 +177,9 @@ class DB:
     def create_report(self, patient_id: str, nutri_id: str,
                       measurement: dict, csv_raw: str,
                       pdf_path: str, generation_secs: float,
-                      report_id: str = None) -> dict:
+                      report_id: str = None,
+                      source: str = 'mytanita',
+                      native_measurement_id: str = None) -> dict:
         """
         Registra un nuevo reporte en la BD.
         measurement: dict con los campos clave de la medición.
@@ -196,7 +198,10 @@ class DB:
             'csv_raw':            csv_raw,
             'pdf_storage_path':   pdf_path,
             'generation_secs':    generation_secs,
+            'source':             source,
         }
+        if native_measurement_id:
+            payload['native_measurement_id'] = native_measurement_id
         if report_id:
             payload['id'] = report_id
         res = self.client.table('reports').insert(payload).execute()
@@ -481,6 +486,39 @@ class DB:
                .select('id')
                .eq('nutri_id', nutri_id)
                .eq('idempotency_key', idempotency_key)
+               .limit(1)
+               .execute())
+        return res.data[0] if res.data else None
+
+    def get_owned_native_measurement(self, measurement_id: str,
+                                     nutri_id: str) -> Optional[dict]:
+        """Trae una captura nativa solo si pertenece al nutricionista."""
+        res = (self.client.table('native_measurements')
+               .select('*')
+               .eq('id', measurement_id)
+               .eq('nutri_id', nutri_id)
+               .limit(1)
+               .execute())
+        return res.data[0] if res.data else None
+
+    def get_native_measurements_up_to(self, patient_id: str, nutri_id: str,
+                                      captured_at: str) -> list:
+        """Historial Nativa cronológico hasta la medición elegida."""
+        res = (self.client.table('native_measurements')
+               .select('*')
+               .eq('patient_id', patient_id)
+               .eq('nutri_id', nutri_id)
+               .lte('captured_at', captured_at)
+               .order('captured_at', desc=False)
+               .execute())
+        return res.data or []
+
+    def get_report_by_native_measurement(self, measurement_id: str,
+                                         nutri_id: str) -> Optional[dict]:
+        res = (self.client.table('reports')
+               .select('id,pdf_storage_path')
+               .eq('native_measurement_id', measurement_id)
+               .eq('nutri_id', nutri_id)
                .limit(1)
                .execute())
         return res.data[0] if res.data else None
