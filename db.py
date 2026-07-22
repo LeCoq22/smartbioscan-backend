@@ -513,6 +513,33 @@ class DB:
                .execute())
         return res.data or []
 
+    def list_owned_native_measurements(self, patient_id: str, nutri_id: str,
+                                       limit: int = 50, offset: int = 0) -> list:
+        """Historial Nativa paginado para la aplicación móvil."""
+        res = (self.client.table('native_measurements')
+               .select(
+                   'id,patient_id,captured_at,decoded_fields,'
+                   'parser_version,profile_snapshot'
+               )
+               .eq('patient_id', patient_id)
+               .eq('nutri_id', nutri_id)
+               .order('captured_at', desc=True)
+               .range(offset, offset + limit - 1)
+               .execute())
+        return res.data or []
+
+    def get_reports_by_native_measurements(self, measurement_ids: list,
+                                           nutri_id: str) -> list:
+        """Reportes propios vinculados al conjunto de mediciones indicado."""
+        if not measurement_ids:
+            return []
+        res = (self.client.table('reports')
+               .select('id,native_measurement_id')
+               .eq('nutri_id', nutri_id)
+               .in_('native_measurement_id', measurement_ids)
+               .execute())
+        return res.data or []
+
     def get_report_by_native_measurement(self, measurement_id: str,
                                          nutri_id: str) -> Optional[dict]:
         res = (self.client.table('reports')

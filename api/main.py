@@ -365,6 +365,9 @@ class NutriMeResponse(BaseModel):
     subscription_end: Optional[str] = None
     subscription_next_billing_date: Optional[str] = None
     max_reports_month: Optional[int] = None
+    reports_this_month: Optional[int] = None
+    reports_total: Optional[int] = None
+    reports_month_reset: Optional[str] = None
     max_patients: Optional[int] = None
 
 class UpdateNutriMeRequest(BaseModel):
@@ -818,7 +821,9 @@ async def get_nutri_me(nutri_id: str = Depends(get_current_nutri)):
            .select(
                'id, email, full_name, display_signature, '
                'subscription_status, subscription_type, subscription_end, '
-               'subscription_next_billing_date, max_reports_month, max_patients'
+               'subscription_next_billing_date, max_reports_month, '
+               'reports_this_month, reports_total, reports_month_reset, '
+               'max_patients'
            )
            .eq('id', nutri_id)
            .single()

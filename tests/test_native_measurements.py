@@ -39,6 +39,8 @@ class FakeDB:
         self.measurements = {}       # (nutri_id, idempotency_key) -> id
         self.inserted_rows = []
         self._counter = 0
+        self.listed_rows = []
+        self.report_rows = []
 
     def get_owned_patient_status(self, patient_id, nutri_id):
         p = self.patients.get(patient_id)
@@ -62,6 +64,18 @@ class FakeDB:
     def get_native_measurement_by_idempotency(self, nutri_id, idem):
         mid = self.measurements.get((nutri_id, idem))
         return {"id": mid} if mid else None
+
+    def list_owned_native_measurements(self, patient_id, nutri_id, limit, offset):
+        assert patient_id == PATIENT
+        assert nutri_id == NUTRI
+        return self.listed_rows[offset:offset + limit]
+
+    def get_reports_by_native_measurements(self, measurement_ids, nutri_id):
+        assert nutri_id == NUTRI
+        return [
+            row for row in self.report_rows
+            if row["native_measurement_id"] in measurement_ids
+        ]
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -120,6 +134,70 @@ def _post(client, db, payload=None, headers=None):
             json=payload if payload is not None else _payload(),
             headers=headers if headers is not None else _headers(),
         )
+
+
+def _get(client, db, query=""):
+    with patch("db.DB", return_value=db):
+        return client.get(f"/api/native-measurements?patient_id={PATIENT}{query}")
+
+
+def test_list_measurements_includes_report_link_without_raw_b010():
+    db = _active_patient_db()
+    db.listed_rows = [
+        {
+            "id": IDEM,
+            "patient_id": PATIENT,
+            "captured_at": "2026-07-20T10:30:00+00:00",
+            "decoded_fields": {"Weight": 76.8, "BodyFat": 27.4},
+            "parser_version": "b010-tanita-tags-v3",
+            "profile_snapshot": {"height_cm": 182.0},
+            "raw_b010_hex": "should-not-leave-server",
+        }
+    ]
+    db.report_rows = [{"id": IDEM_2, "native_measurement_id": IDEM}]
+
+    resp = _get(_client(), db)
+
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["limit"] == 50
+    assert body["offset"] == 0
+    assert body["items"][0]["report_id"] == IDEM_2
+    assert body["items"][0]["decoded_fields"]["Weight"] == 76.8
+    assert "raw_b010_hex" not in body["items"][0]
+
+
+def test_list_measurements_applies_bounded_pagination():
+    db = _active_patient_db()
+    db.listed_rows = [
+        {
+            "id": IDEM,
+            "patient_id": PATIENT,
+            "captured_at": "2026-07-20T10:30:00+00:00",
+            "decoded_fields": {},
+            "parser_version": "b010-tanita-tags-v3",
+            "profile_snapshot": {},
+        },
+        {
+            "id": IDEM_2,
+            "patient_id": PATIENT,
+            "captured_at": "2026-07-19T10:30:00+00:00",
+            "decoded_fields": {},
+            "parser_version": "b010-tanita-tags-v3",
+            "profile_snapshot": {},
+        },
+    ]
+
+    resp = _get(_client(), db, "&limit=1&offset=1")
+
+    assert resp.status_code == 200, resp.text
+    assert [row["id"] for row in resp.json()["items"]] == [IDEM_2]
+
+
+def test_list_measurements_hides_foreign_or_missing_patient():
+    db = FakeDB(patients={PATIENT: {"nutri_id": "other", "is_active": True}})
+    resp = _get(_client(), db)
+    assert resp.status_code == 404
 
 
 # ── 1. Creación exitosa ─────────────────────────────────────────────────────

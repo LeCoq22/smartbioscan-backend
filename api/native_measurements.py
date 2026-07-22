@@ -22,7 +22,7 @@ import uuid
 from datetime import datetime, date, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, ConfigDict
 
 _logger = logging.getLogger("smartbioscan.native_measurements")
@@ -96,6 +96,22 @@ class NativeReportResponse(BaseModel):
     ok: bool
     report_id: str
     created: bool
+
+
+class NativeMeasurementListItem(BaseModel):
+    id: str
+    patient_id: str
+    captured_at: str
+    decoded_fields: dict
+    parser_version: str
+    profile_snapshot: dict
+    report_id: Optional[str] = None
+
+
+class NativeMeasurementListResponse(BaseModel):
+    items: list[NativeMeasurementListItem]
+    limit: int
+    offset: int
 
 
 # ─────────────────────────────────────────────
@@ -227,6 +243,50 @@ def register_routes(app, get_current_nutri_dep):
     vez (p. ej. en tests con distintas dependencias).
     """
     router = APIRouter(prefix="/api/native-measurements", tags=["native-measurements"])
+
+    @router.get("", response_model=NativeMeasurementListResponse)
+    async def list_native_measurements(
+        patient_id: str,
+        limit: int = Query(50, ge=1, le=100),
+        offset: int = Query(0, ge=0),
+        nutri_id: str = Depends(get_current_nutri_dep),
+    ):
+        """Lista el historial Nativa propio sin exponer B010 ni IDs ajenos."""
+        patient_uuid = _normalize_uuid(patient_id, "patient_id")
+        from db import DB
+        db = DB()
+        if not db.get_owned_patient_status(patient_uuid, nutri_id):
+            raise HTTPException(status_code=404, detail="Paciente no encontrado")
+
+        rows = db.list_owned_native_measurements(
+            patient_uuid,
+            nutri_id,
+            limit=limit,
+            offset=offset,
+        )
+        report_by_measurement = {
+            str(row["native_measurement_id"]): str(row["id"])
+            for row in db.get_reports_by_native_measurements(
+                [str(row["id"]) for row in rows],
+                nutri_id,
+            )
+        }
+        return NativeMeasurementListResponse(
+            items=[
+                NativeMeasurementListItem(
+                    id=str(row["id"]),
+                    patient_id=str(row["patient_id"]),
+                    captured_at=str(row["captured_at"]),
+                    decoded_fields=row.get("decoded_fields") or {},
+                    parser_version=str(row["parser_version"]),
+                    profile_snapshot=row.get("profile_snapshot") or {},
+                    report_id=report_by_measurement.get(str(row["id"])),
+                )
+                for row in rows
+            ],
+            limit=limit,
+            offset=offset,
+        )
 
     @router.post("", response_model=NativeMeasurementResponse)
     async def ingest_native_measurement(
