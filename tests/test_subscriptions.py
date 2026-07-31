@@ -58,14 +58,17 @@ def test_init_subscription_valid_plan(client):
         "email": "nutri@test.com"
     }
 
-    mock_sdk = MagicMock()
-    mock_sdk.preapproval.return_value.create.return_value = {
-        "status": 201,
-        "response": {
-            "id":         TEST_PREAPPROVAL_ID,
-            "init_point": "https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_plan_id=xxx",
-        },
+    response = MagicMock()
+    response.status_code = 201
+    response.json.return_value = {
+        "id": TEST_PREAPPROVAL_ID,
+        "init_point": "https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_id=xxx",
     }
+    http_client = MagicMock()
+    http_client.post = AsyncMock(return_value=response)
+    http_context = MagicMock()
+    http_context.__aenter__ = AsyncMock(return_value=http_client)
+    http_context.__aexit__ = AsyncMock(return_value=None)
 
     with (
         patch("api.subscriptions.PLANS", {
@@ -79,7 +82,8 @@ def test_init_subscription_valid_plan(client):
                 "mp_plan_id":        "mp-plan-test-001",
             }
         }),
-        patch("api.subscriptions._mp_sdk", return_value=mock_sdk),
+        patch.dict("os.environ", {"MP_ACCESS_TOKEN": "APP_USR-test"}),
+        patch("api.subscriptions.httpx.AsyncClient", return_value=http_context),
         patch("db.DB", return_value=mock_db),
     ):
         resp = client.post("/api/subscriptions/init", json={"plan_id": "bioscan_basico_mensual"})
@@ -99,24 +103,46 @@ def test_init_subscription_invalid_plan(client):
     assert "plan_id inválido" in resp.json()["detail"]
 
 
-# ── Test 3: init con mp_plan_id vacío (plan no configurado) ───────────────────
+# ── Test 3: init inline no requiere mp_plan_id ─────────────────────────────────
 
-def test_init_subscription_plan_not_configured(client):
-    """Si mp_plan_id está vacío, devuelve 503."""
-    with patch("api.subscriptions.PLANS", {
-        "bioscan_basico_mensual": {
-            "title":             "BioScan Básico — Mensual",
-            "unit_price":        24500.0,
-            "months":            1,
-            "max_reports_month": 30,
-            "max_patients":      15,
-            "subscription_type": "monthly",
-            "mp_plan_id":        "",  # vacío — aún no configurado
-        }
-    }):
+def test_init_subscription_inline_does_not_require_mp_plan_id(client):
+    """Las suscripciones inline funcionan sin preapproval_plan_id."""
+    mock_db = MagicMock()
+    mock_db.client.table.return_value.select.return_value.eq.return_value.single.return_value.execute.return_value.data = {
+        "email": "nutri@test.com"
+    }
+    response = MagicMock()
+    response.status_code = 201
+    response.json.return_value = {
+        "id": TEST_PREAPPROVAL_ID,
+        "init_point": "https://www.mercadopago.com.ar/subscriptions/checkout?preapproval_id=xxx",
+    }
+    http_client = MagicMock()
+    http_client.post = AsyncMock(return_value=response)
+    http_context = MagicMock()
+    http_context.__aenter__ = AsyncMock(return_value=http_client)
+    http_context.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("api.subscriptions.PLANS", {
+            "bioscan_basico_mensual": {
+                "title":             "BioScan Básico — Mensual",
+                "unit_price":        24500.0,
+                "months":            1,
+                "max_reports_month": 30,
+                "max_patients":      15,
+                "subscription_type": "monthly",
+                "mp_plan_id":        "",
+            }
+        }),
+        patch.dict("os.environ", {"MP_ACCESS_TOKEN": "APP_USR-test"}),
+        patch("api.subscriptions.httpx.AsyncClient", return_value=http_context),
+        patch("db.DB", return_value=mock_db),
+    ):
         resp = client.post("/api/subscriptions/init", json={"plan_id": "bioscan_basico_mensual"})
 
-    assert resp.status_code == 503
+    assert resp.status_code == 200
+    assert resp.json()["preapproval_id"] == TEST_PREAPPROVAL_ID
 
 
 # ── Test 4: webhook subscription_preapproval authorized ───────────────────────
@@ -217,7 +243,164 @@ async def test_handle_subscription_preapproval_idempotent():
     mock_db.client.table.return_value.update.assert_not_called()
 
 
-# ── Test 6: cancel sin suscripción activa ─────────────────────────────────────
+# ── Cobros recurrentes ────────────────────────────────────────────────────────
+
+def _authorized_payment_http(invoice: dict):
+    response = MagicMock()
+    response.status_code = 200
+    response.json.return_value = invoice
+    client = MagicMock()
+    client.get = AsyncMock(return_value=response)
+    context = MagicMock()
+    context.__aenter__ = AsyncMock(return_value=client)
+    context.__aexit__ = AsyncMock(return_value=None)
+    return context
+
+
+@pytest.mark.asyncio
+async def test_authorized_payment_uses_nested_payment_status_and_extends_renewal():
+    """
+    La API de facturas devuelve status=scheduled arriba y
+    payment.status=approved. Debe procesar la renovación, no ignorarla.
+    """
+    from api.subscriptions import handle_authorized_payment
+
+    payment_id = "6114264375"
+    invoice = {
+        "id": payment_id,
+        "status": "scheduled",
+        "date_created": "2026-07-24T12:19:11-03:00",
+        "debit_date": "2026-07-24T12:19:11-03:00",
+        "preapproval_id": TEST_PREAPPROVAL_ID,
+        "payment": {"id": 19951521071, "status": "approved"},
+    }
+    mock_sdk = MagicMock()
+    mock_sdk.preapproval.return_value.get.return_value = {
+        "status": 200,
+        "response": {
+            "id": TEST_PREAPPROVAL_ID,
+            "reason": "BioScan Plus — Mensual",
+            "next_payment_date": "2026-08-24T12:19:11-03:00",
+        },
+    }
+    mock_db = MagicMock()
+    mock_db.client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [{
+        "id": TEST_NUTRI_ID,
+        "subscription_status": "active",
+        "subscription_type": "monthly",
+        "subscription_start": "2026-06-24",
+        "subscription_end": "2026-07-24",
+        "subscription_next_billing_date": "2026-07-24T12:19:11-03:00",
+    }]
+
+    with (
+        patch.dict("os.environ", {"MP_ACCESS_TOKEN": "APP_USR-test"}),
+        patch("api.subscriptions.httpx.AsyncClient",
+              return_value=_authorized_payment_http(invoice)),
+        patch("api.subscriptions._payment_event_processed", return_value=False),
+        patch("db.DB", return_value=mock_db),
+    ):
+        result = await handle_authorized_payment(mock_sdk, payment_id)
+
+    assert result["detail"] == "renewal_extended"
+    assert result["subscription_end"] == "2026-08-24"
+    updated_data = mock_db.client.table.return_value.update.call_args[0][0]
+    assert updated_data["subscription_status"] == "active"
+    assert updated_data["subscription_end"] == "2026-08-24"
+    assert updated_data["subscription_next_billing_date"] == "2026-08-24T12:19:11-03:00"
+    assert updated_data["max_reports_month"] == 100
+    assert "reports_this_month" not in updated_data
+    assert "reports_month_reset" not in updated_data
+
+
+@pytest.mark.asyncio
+async def test_authorized_payment_initial_invoice_does_not_double_extend():
+    """El cobro inicial ya cubierto por preapproval no añade otro período."""
+    from api.subscriptions import handle_authorized_payment
+
+    payment_id = "initial-invoice-1"
+    invoice = {
+        "id": payment_id,
+        "status": "scheduled",
+        "date_created": "2026-06-24T12:19:11-03:00",
+        "debit_date": "2026-06-24T12:19:11-03:00",
+        "preapproval_id": TEST_PREAPPROVAL_ID,
+        "payment": {"id": 1001, "status": "approved"},
+    }
+    mock_sdk = MagicMock()
+    mock_sdk.preapproval.return_value.get.return_value = {
+        "status": 200,
+        "response": {
+            "id": TEST_PREAPPROVAL_ID,
+            "reason": "BioScan Básico — Mensual",
+            "next_payment_date": "2026-07-24T12:19:11-03:00",
+        },
+    }
+    mock_db = MagicMock()
+    mock_db.client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [{
+        "id": TEST_NUTRI_ID,
+        "subscription_status": "active",
+        "subscription_type": "monthly",
+        "subscription_start": "2026-06-24",
+        "subscription_end": "2026-07-24",
+        "subscription_next_billing_date": "2026-07-24T12:19:11-03:00",
+    }]
+
+    with (
+        patch.dict("os.environ", {"MP_ACCESS_TOKEN": "APP_USR-test"}),
+        patch("api.subscriptions.httpx.AsyncClient",
+              return_value=_authorized_payment_http(invoice)),
+        patch("api.subscriptions._payment_event_processed", return_value=False),
+        patch("db.DB", return_value=mock_db),
+    ):
+        result = await handle_authorized_payment(mock_sdk, payment_id)
+
+    assert result["detail"] == "initial_payment_already_covered"
+    assert result["subscription_end"] == "2026-07-24"
+
+
+@pytest.mark.asyncio
+async def test_authorized_payment_idempotency_uses_invoice_id_not_quota_reset():
+    """Un reintento del mismo invoice no toca la suscripción ni el cupo."""
+    from api.subscriptions import handle_authorized_payment
+
+    payment_id = "renewal-invoice-duplicate"
+    invoice = {
+        "id": payment_id,
+        "status": "scheduled",
+        "debit_date": "2026-07-24T12:19:11-03:00",
+        "preapproval_id": TEST_PREAPPROVAL_ID,
+        "payment": {"id": 1002, "status": "approved"},
+    }
+    mock_sdk = MagicMock()
+    mock_sdk.preapproval.return_value.get.return_value = {
+        "status": 200,
+        "response": {"id": TEST_PREAPPROVAL_ID},
+    }
+    mock_db = MagicMock()
+    mock_db.client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = [{
+        "id": TEST_NUTRI_ID,
+        "subscription_status": "active",
+        "subscription_type": "monthly",
+        "subscription_start": "2026-06-24",
+        "subscription_end": "2026-08-24",
+        "subscription_next_billing_date": "2026-08-24T12:19:11-03:00",
+    }]
+
+    with (
+        patch.dict("os.environ", {"MP_ACCESS_TOKEN": "APP_USR-test"}),
+        patch("api.subscriptions.httpx.AsyncClient",
+              return_value=_authorized_payment_http(invoice)),
+        patch("api.subscriptions._payment_event_processed", return_value=True),
+        patch("db.DB", return_value=mock_db),
+    ):
+        result = await handle_authorized_payment(mock_sdk, payment_id)
+
+    assert result["detail"] == "already_processed"
+    mock_db.client.table.return_value.update.assert_not_called()
+
+
+# ── Test cancel sin suscripción activa ────────────────────────────────────────
 
 def test_cancel_subscription_no_active(client):
     """POST /api/subscriptions/cancel sin suscripción → 404."""

@@ -124,6 +124,74 @@ def _find_plan_by_reason(reason: str) -> Optional[tuple[str, dict]]:
     return None
 
 
+def _mp_date(value: Optional[str]) -> Optional[date]:
+    """Convierte una fecha ISO de Mercado Pago a date sin depender del huso local."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+    except (TypeError, ValueError):
+        logger.warning("Fecha inválida recibida de Mercado Pago: %r", value)
+        return None
+
+
+def _record_payment_event(
+    db,
+    *,
+    event_id: str,
+    preapproval_id: Optional[str],
+    nutri_id: Optional[str],
+    processing_status: str,
+    provider_status: Optional[str],
+    detail: dict,
+) -> None:
+    """Persiste una traza sin datos de tarjeta; nunca bloquea el webhook."""
+    try:
+        db.client.table("payment_webhook_events").upsert({
+            "provider": "mercadopago",
+            "event_type": "subscription_authorized_payment",
+            "provider_event_id": event_id,
+            "preapproval_id": preapproval_id,
+            "nutri_id": nutri_id,
+            "processing_status": processing_status,
+            "provider_status": provider_status,
+            "detail": detail,
+            "processed_at": (
+                datetime.now(timezone.utc).isoformat()
+                if processing_status in ("processed", "ignored") else None
+            ),
+        }, on_conflict="provider,event_type,provider_event_id").execute()
+    except Exception:
+        # La renovación debe seguir funcionando durante el despliegue escalonado
+        # aunque la migración de auditoría todavía no esté aplicada.
+        logger.exception(
+            "No se pudo auditar authorized_payment=%s status=%s",
+            event_id, processing_status,
+        )
+
+
+def _payment_event_processed(db, event_id: str) -> bool:
+    """Idempotencia por ID de factura; tolera despliegue antes de la migración."""
+    try:
+        res = (
+            db.client.table("payment_webhook_events")
+            .select("id")
+            .eq("provider", "mercadopago")
+            .eq("event_type", "subscription_authorized_payment")
+            .eq("provider_event_id", event_id)
+            .eq("processing_status", "processed")
+            .limit(1)
+            .execute()
+        )
+        return bool(res.data)
+    except Exception:
+        logger.exception(
+            "No se pudo consultar idempotencia de authorized_payment=%s",
+            event_id,
+        )
+        return False
+
+
 # ─────────────────────────────────────────────
 # WEBHOOK HANDLERS (llamados desde payments.py)
 # ─────────────────────────────────────────────
@@ -266,7 +334,7 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
     data.id = authorized_payment_id (cobro recurrente exitoso)
 
     Acción:
-    - approved → extiende subscription_end, resetea reports_this_month
+    - payment.status=approved → extiende subscription_end en renovaciones
     - rejected → solo loggear (MP reintenta solo)
     """
     token = os.getenv("MP_ACCESS_TOKEN")
@@ -287,16 +355,14 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
         )
         return {"ok": True, "detail": "mp_api_error"}
 
-    payment = resp.json()
-    status = payment.get("status")
-    preapproval_id = payment.get("preapproval_id")
-
-    if status != "approved":
-        logger.info(
-            "authorized_payment %s status=%s — no action (MP reintenta solo)",
-            authorized_payment_id, status,
-        )
-        return {"ok": True, "detail": f"status={status}"}
+    invoice = resp.json()
+    invoice_status = invoice.get("status")
+    nested_payment = invoice.get("payment") or {}
+    # En /authorized_payments/{id}, el estado del cobro está dentro de
+    # payment.status. El status de nivel superior describe la factura y suele ser
+    # "scheduled" incluso cuando el cobro fue aprobado.
+    payment_status = nested_payment.get("status") or invoice_status
+    preapproval_id = invoice.get("preapproval_id")
 
     if not preapproval_id:
         logger.error("authorized_payment %s: sin preapproval_id", authorized_payment_id)
@@ -305,52 +371,168 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
     from db import DB
     db = DB()
 
+    if payment_status != "approved":
+        _record_payment_event(
+            db,
+            event_id=authorized_payment_id,
+            preapproval_id=preapproval_id,
+            nutri_id=None,
+            processing_status="ignored",
+            provider_status=payment_status or invoice_status,
+            detail={"invoice_status": invoice_status, "payment_status": payment_status},
+        )
+        logger.info(
+            "authorized_payment %s invoice_status=%s payment_status=%s — no action",
+            authorized_payment_id, invoice_status, payment_status,
+        )
+        return {"ok": True, "detail": f"payment_status={payment_status}"}
+
+    preapproval_result = sdk.preapproval().get(preapproval_id)
+    preapproval = (
+        preapproval_result.get("response", {})
+        if preapproval_result.get("status") == 200 else {}
+    )
+    if not preapproval:
+        logger.warning(
+            "authorized_payment %s: no se pudo refrescar preapproval=%s; "
+            "se conserva next_billing actual",
+            authorized_payment_id, preapproval_id,
+        )
+
     res = (db.client.table("nutris")
-           .select("id, subscription_status, subscription_end, subscription_type, reports_month_reset")
+           .select(
+               "id, subscription_status, subscription_start, subscription_end, "
+               "subscription_type, subscription_next_billing_date"
+           )
            .eq("mp_preapproval_id", preapproval_id)
            .execute())
 
     if not res.data:
+        _record_payment_event(
+            db,
+            event_id=authorized_payment_id,
+            preapproval_id=preapproval_id,
+            nutri_id=None,
+            processing_status="failed",
+            provider_status=payment_status,
+            detail={"reason": "nutri_not_found"},
+        )
         logger.error("authorized_payment: nutri not found for preapproval_id=%s", preapproval_id)
         return {"ok": True, "detail": "nutri_not_found"}
 
     nutri = res.data[0]
     nutri_id = nutri["id"]
 
-    # Idempotencia: si reports_month_reset ya es hoy, asumimos que el cobro fue procesado
-    reset_today = (nutri.get("reports_month_reset") or "")[:10] == date.today().isoformat()
-    if reset_today and nutri.get("subscription_status") == "active":
+    # Idempotencia real por ID de factura, independiente del contador de cuota.
+    if _payment_event_processed(db, authorized_payment_id):
         logger.info(
-            "authorized_payment %s: ya procesado hoy — skip", authorized_payment_id,
+            "authorized_payment %s: invoice ya procesado — skip", authorized_payment_id,
         )
         return {"ok": True, "detail": "already_processed"}
 
-    # Determinar cantidad de meses a extender según subscription_type del nutri
-    subscription_type = nutri.get("subscription_type", "monthly")
-    months = 6 if subscription_type == "semestral" else 1
+    # El plan se refresca desde el preapproval para reparar cualquier deriva de
+    # report_limit/report_type causada por una intervención manual.
+    match = (
+        _find_plan_by_mp_plan_id(preapproval.get("preapproval_plan_id", ""))
+        or _find_plan_by_reason(preapproval.get("reason", ""))
+    )
+    plan = match[1] if match else None
+    subscription_type = (
+        plan["subscription_type"] if plan
+        else nutri.get("subscription_type", "monthly")
+    )
+    months = plan["months"] if plan else (6 if subscription_type == "semestral" else 1)
 
+    paid_at = (
+        _mp_date(invoice.get("debit_date"))
+        or _mp_date(invoice.get("date_created"))
+        or date.today()
+    )
     current_end_str = nutri.get("subscription_end")
-    if current_end_str and nutri.get("subscription_status") == "active":
-        base = date.fromisoformat(current_end_str[:10])
-        new_end = _add_months(base, months)
-    else:
-        new_end = _add_months(date.today(), months)
+    current_end = _mp_date(current_end_str)
+    current_next_billing = _mp_date(nutri.get("subscription_next_billing_date"))
+    # El primer cobro ya queda cubierto por subscription_preapproval. No usamos
+    # next_billing para distinguirlo: al reconciliar eventos antiguos Mercado
+    # Pago ya puede haber avanzado esa fecha a un ciclo posterior.
+    subscription_start = _mp_date(nutri.get("subscription_start"))
+    initial_payment_already_covered = bool(
+        subscription_start == paid_at
+        and current_end
+        and current_end >= _add_months(paid_at, months)
+    )
 
-    db.client.table("nutris").update({
-        "subscription_status":  "active",
-        "subscription_end":     new_end.isoformat(),
-        "reports_this_month":   0,
-        "reports_month_reset":  date.today().isoformat(),
-        "subscription_next_billing_date": payment.get("next_payment_date"),
-    }).eq("id", nutri_id).execute()
+    # Fallback durante un despliegue escalonado sin tabla de eventos: si la BD ya
+    # tiene una próxima fecha posterior a esta factura, la renovación ya se
+    # reflejó. La excepción es el cobro inicial, identificado por start=paid_at.
+    renewal_already_covered = bool(
+        not initial_payment_already_covered
+        and current_next_billing
+        and current_next_billing > paid_at
+    )
+
+    if renewal_already_covered:
+        _record_payment_event(
+            db,
+            event_id=authorized_payment_id,
+            preapproval_id=preapproval_id,
+            nutri_id=nutri_id,
+            processing_status="ignored",
+            provider_status=payment_status,
+            detail={"reason": "billing_period_already_advanced"},
+        )
+        return {"ok": True, "detail": "already_processed"}
+    elif initial_payment_already_covered:
+        new_end = current_end or _add_months(paid_at, months)
+        action = "initial_payment_already_covered"
+    else:
+        base = max(current_end, paid_at) if current_end else paid_at
+        new_end = _add_months(base, months)
+        action = "renewal_extended"
+
+    update_data = {
+        "subscription_status": "active",
+        "subscription_end": new_end.isoformat(),
+        "subscription_cancelled_at": None,
+    }
+    next_billing = preapproval.get("next_payment_date")
+    if next_billing:
+        update_data["subscription_next_billing_date"] = next_billing
+    if plan:
+        update_data.update({
+            "subscription_type": plan["subscription_type"],
+            "max_reports_month": plan["max_reports_month"],
+            "max_patients": plan["max_patients"],
+        })
+
+    # La cuota mensual se resetea exclusivamente por las RPC de cupo ancladas en
+    # subscription_start. No se pone a cero aquí: un webhook tardío no debe borrar
+    # reportes ya consumidos en el nuevo ciclo.
+    db.client.table("nutris").update(update_data).eq("id", nutri_id).execute()
+
+    _record_payment_event(
+        db,
+        event_id=authorized_payment_id,
+        preapproval_id=preapproval_id,
+        nutri_id=nutri_id,
+        processing_status="processed",
+        provider_status=payment_status,
+        detail={
+            "action": action,
+            "invoice_status": invoice_status,
+            "payment_status": payment_status,
+            "subscription_end": new_end.isoformat(),
+        },
+    )
 
     logger.info(
-        "authorized_payment approved: nutri=%s preapproval=%s authorized_payment=%s new_end=%s",
-        nutri_id, preapproval_id, authorized_payment_id, new_end,
+        "authorized_payment approved: nutri=%s preapproval=%s authorized_payment=%s "
+        "action=%s new_end=%s",
+        nutri_id, preapproval_id, authorized_payment_id, action, new_end,
     )
     return {
         "ok": True,
         "nutri_id": nutri_id,
+        "detail": action,
         "subscription_end": new_end.isoformat(),
     }
 
