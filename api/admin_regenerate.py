@@ -24,7 +24,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 # El pipeline vive un nivel arriba de api/
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -240,6 +240,18 @@ class RegenerateBatchRequest(BaseModel):
     dry_run: bool = True
     limit: Optional[int] = None
     nutri_id: Optional[str] = None  # filtrar por un nutri puntual
+    report_ids: Optional[list[str]] = None  # regenerar únicamente IDs concretos
+
+    @field_validator('report_ids')
+    @classmethod
+    def validate_report_ids(cls, value):
+        if value is None:
+            return value
+        # Quitar duplicados conservando el orden para no regenerar dos veces.
+        unique = list(dict.fromkeys(value))
+        if len(unique) > 2000:
+            raise ValueError('report_ids admite como máximo 2000 elementos')
+        return unique
 
 
 class RegenerateBatchResponse(BaseModel):
@@ -248,6 +260,37 @@ class RegenerateBatchResponse(BaseModel):
     failed: int
     dry_run: bool
     results: list
+
+
+def _get_reports_for_batch(db, body: RegenerateBatchRequest) -> list:
+    """Obtiene el alcance exacto del batch sin cargar reportes ajenos."""
+    if body.report_ids == []:
+        return []
+
+    def fetch(report_ids=None, limit=None):
+        q = (db.client.table('reports')
+             .select(
+                 'id, nutri_id, patient_id, measurement_date, generated_at, csv_raw'
+             ))
+        if report_ids is not None:
+            q = q.in_('id', report_ids)
+        if body.nutri_id:
+            q = q.eq('nutri_id', body.nutri_id)
+        q = q.order('generated_at', desc=False)
+        if limit:
+            q = q.limit(limit)
+        return q.execute().data or []
+
+    if body.report_ids is None:
+        return fetch(limit=body.limit)
+
+    # PostgREST codifica `.in_()` en la URL. Trocear evita URLs demasiado
+    # largas al regenerar cientos de IDs provenientes de una auditoría.
+    reports = []
+    for start in range(0, len(body.report_ids), 100):
+        reports.extend(fetch(body.report_ids[start:start + 100]))
+    reports.sort(key=lambda row: row.get('generated_at') or '')
+    return reports[:body.limit] if body.limit else reports
 
 
 # ─────────────────────────────────────────────
@@ -418,18 +461,7 @@ def register_routes(app, get_admin_dependency):
         from db import DB
         db = DB()
 
-        q = (db.client.table('reports')
-             .select('id, nutri_id, patient_id, measurement_date, csv_raw'))
-
-        if body.nutri_id:
-            q = q.eq('nutri_id', body.nutri_id)
-
-        q = q.order('generated_at', desc=False)
-        if body.limit:
-            q = q.limit(body.limit)
-
-        res = q.execute()
-        reports = res.data or []
+        reports = _get_reports_for_batch(db, body)
 
         results = []
         ok_count = 0
@@ -484,18 +516,7 @@ def register_routes(app, get_admin_dependency):
         from db import DB
         db = DB()
 
-        q = (db.client.table('reports')
-             .select('id, nutri_id, patient_id, measurement_date, csv_raw'))
-
-        if body.nutri_id:
-            q = q.eq('nutri_id', body.nutri_id)
-
-        q = q.order('generated_at', desc=False)
-        if body.limit:
-            q = q.limit(body.limit)
-
-        res = q.execute()
-        reports = res.data or []
+        reports = _get_reports_for_batch(db, body)
 
         job_id = _new_job(
             initiator=admin_id,
@@ -505,6 +526,9 @@ def register_routes(app, get_admin_dependency):
                 'dry_run': body.dry_run,
                 'nutri_id': body.nutri_id,
                 'limit': body.limit,
+                'report_ids_count': (
+                    len(body.report_ids) if body.report_ids is not None else None
+                ),
             },
         )
 

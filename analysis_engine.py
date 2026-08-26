@@ -327,12 +327,13 @@ def get_leg_muscle_score_reference(sex: str, age: int) -> float:
     return float(curve[-1][1])  # fallback (no debería ocurrir)
 
 
-def classify_mq_total(mq: float) -> str:
-    """Clasifica MQ global Tanita. Rangos iguales por sexo. Fuente: Tanita Corp. [9]"""
-    if mq >= 80: return 'Excelente'
-    if mq >= 60: return 'Bueno'
-    if mq >= 50: return 'Normal'
-    return 'Bajo'
+def classify_mq_total(mq: float, sex: str, age: int) -> str:
+    """Clasifica la calidad muscular global según sexo y edad (Tanita RD-545)."""
+    normal_range = get_muscle_quality_references(sex, age)['normal']
+    return classify_range(
+        mq, normal_range,
+        low_label='Bajo', normal_label='Normal', high_label='Alto'
+    )
 
 
 def get_imme_threshold(sex: str) -> dict:
@@ -672,7 +673,7 @@ def compute_muscle(m: TanitaMeasurement, patient: PatientInfo) -> dict:
             seg_data['kg_cat'] = None
 
     mq_total     = m.muscle_quality
-    mq_total_cat = classify_mq_total(mq_total)
+    mq_total_cat = classify_mq_total(mq_total, patient.sex, patient.age)
 
     return {
         'muscle_kg': m.muscle_mass_kg,

@@ -278,14 +278,14 @@ def generate_html(result, doctor_name=""):
 
     mq_total     = muscle['mq_total']
     mq_total_cat = muscle['mq_total_cat']
-    mq_badge_style = ('exc' if mq_total_cat == 'Excelente'
-                      else 'ok' if mq_total_cat in ('Bueno', 'Normal')
+    mq_badge_style = ('exc' if mq_total_cat == 'Alto'
+                      else 'ok' if mq_total_cat == 'Normal'
                       else 'warn')
     seg_mus += f"""<div style="margin-top:7px;padding:5px 8px;background:#f0eef8;border-radius:5px;display:flex;align-items:center;gap:10px;border-left:3px solid #8e44ad">
   <div style="font-size:9px;font-weight:600;flex:1;color:#5c3d8f">Calidad Muscular Total (MQ)</div>
   <div style="font-size:12px;font-weight:700;color:#5c3d8f">{int(mq_total)}<span style="font-size:8px;font-weight:400;color:#9c9a92"> / 100</span></div>
   <div>{badge(mq_total_cat, mq_badge_style)}</div>
-  <div style="font-size:7.5px;color:#9c9a92">Bajo &lt;50 · Normal 50–59 · Bueno 60–79 · Excelente ≥80</div>
+  <div style="font-size:7.5px;color:#9c9a92">Bajo &lt;{mq_range[0]} · Normal {mq_range[0]}–{mq_range[1]} · Alto &gt;{mq_range[1]}</div>
 </div>"""
 
     # ── Physique Rating ───────────────────────
