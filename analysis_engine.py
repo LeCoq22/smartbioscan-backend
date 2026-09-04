@@ -448,13 +448,24 @@ def compute_act(m: TanitaMeasurement, patient: PatientInfo) -> dict:
 
 def compute_protein(m: TanitaMeasurement, sex: str) -> dict:
     """
-    Proteína ≈ 20% de la MLG (Heymsfield 1997).
-    MLG = Peso − Masa grasa.
+    Proteína corporal según la descomposición mostrada por Tanita:
+    masa muscular − agua corporal total.
+
+    MyTanita no incluye una columna ``Protein`` en el CSV, pero sí entrega
+    masa muscular y porcentaje de agua. Para mediciones antiguas o incompletas
+    sin agua corporal se conserva la estimación anterior (20% de la MLG) como
+    fallback, evitando convertir un dato ausente en una proteína irreal.
     Rangos de referencia diferenciados por sexo.
     """
     mass_fat_kg = round(m.weight_kg * m.body_fat_pct / 100, 2)
     mlg_kg      = round(m.weight_kg - mass_fat_kg, 2)
-    protein_kg  = round(mlg_kg * 0.20, 2)
+
+    if m.body_water_pct > 0 and m.muscle_mass_kg > 0:
+        act_kg = round(m.weight_kg * m.body_water_pct / 100, 2)
+        protein_kg = max(0.0, round(m.muscle_mass_kg - act_kg, 2))
+    else:
+        protein_kg = round(mlg_kg * 0.20, 2)
+
     protein_pct = round(protein_kg / m.weight_kg * 100, 1) if m.weight_kg > 0 else 0.0
 
     refs    = get_protein_references(sex)
