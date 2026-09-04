@@ -1,16 +1,4 @@
-FROM python:3.11-slim-bullseye
-
-# Instalar dependencias del sistema para Playwright y pdfkit
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN apt-get update && apt-get install -y wget && \
-    wget https://github.com/wkhtmltopdf/packaging/releases/download/0.12.6.1-2/wkhtmltox_0.12.6.1-2.bullseye_amd64.deb && \
-    apt-get install -y ./wkhtmltox_0.12.6.1-2.bullseye_amd64.deb && \
-    rm wkhtmltox_0.12.6.1-2.bullseye_amd64.deb && \
-    rm -rf /var/lib/apt/lists/*
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
@@ -18,7 +6,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Instalar Playwright y browsers
+# Instalar Chromium y todas sus dependencias del sistema.
 RUN playwright install chromium --with-deps
 
 # Copiar el código
