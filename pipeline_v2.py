@@ -158,13 +158,14 @@ async def do_scrape(email: str, password: str, skip_settings: bool = False,
                     wait_until="networkidle", timeout=15_000
                 )
 
-            # Settings — skip if already in DB
+            # Settings del perfil activo. En producción ya no se omiten: sexo,
+            # altura o fecha de nacimiento pueden corregirse luego en MyTanita.
             if skip_settings:
                 print("[Scraper] Settings en BD — skip")
                 patient_data = {'name': '', 'age': 0, 'sex': 'F', 'height_cm': 170, 'dob': ''}
             else:
-                raw_settings = await scrape_settings(page)
-                patient_data = parse_settings(raw_settings)
+                from tanita_scraper import scrape_profile_settings
+                patient_data = await scrape_profile_settings(page)
 
             # CSV (profile already active — pass None to avoid double-switch)
             print("[Scraper] Descargando CSV...")
@@ -264,8 +265,16 @@ async def run_pipeline(
         except Exception as e:
             print(f"[Pipeline] ~ Supabase no disponible: {e}")
 
-    # ── Verificar quota si tenemos nutri_id ───
-    if db and nutri_id:
+    # Una regeneración del mismo día reemplaza el informe existente y no debe
+    # volver a consumir cuota.
+    existing_requested_report = None
+    if db and patient_id and measurement_date:
+        existing_requested_report = db.get_report_for_date(
+            patient_id, measurement_date[:10]
+        )
+
+    # ── Verificar quota si vamos a crear un reporte nuevo ───
+    if db and nutri_id and not existing_requested_report:
         quota = db.can_generate_report(nutri_id)
         if not quota.get('ok'):
             reason = quota.get('reason', 'unknown')
@@ -276,8 +285,8 @@ async def run_pipeline(
         print(f"[Pipeline] Quota OK — {remaining} reportes restantes este mes")
 
     # ── Obtener credenciales y datos desde BD si hay patient_id ──
-    settings_in_db = False
     profile_id = None
+    patient_row = None
     if db and patient_id:
         creds = db.get_tanita_credentials(patient_id)
         if not creds:
@@ -292,15 +301,10 @@ async def run_pipeline(
             nutri_id   = nutri_id or patient_row['nutri_id']
             doctor     = doctor or _get_nutri_name(db, nutri_id)
             profile_id = patient_row.get('mytanita_profile_id')
-            # Si ya tenemos datos completos en BD, los usamos
-            # y saltamos el scrape de settings (~3s menos por reporte)
+            # La BD queda como fallback si MyTanita no devuelve algún campo,
+            # pero ya no impide refrescar la ficha durante la generación.
             if db.patient_has_settings(patient_id):
-                settings_in_db  = True
-                name_override   = name_override   or patient_row['full_name']
-                age_override    = age_override    or _calc_age(patient_row.get('date_of_birth'))
-                sex_override    = sex_override    or patient_row.get('sex', 'F')
-                height_override = height_override or float(patient_row.get('height_cm', 170))
-                print(f"[Pipeline] Datos del paciente desde BD (sin re-scrapear settings)")
+                print("[Pipeline] Datos del paciente en BD (fallback disponible)")
 
     # ── Early-fail: si la medición pedida ya está cacheada en patient_csvs
     # y le faltan datos, abortamos AHORA (en ~1s) en vez de hacer todo el
@@ -342,7 +346,7 @@ async def run_pipeline(
 
     # ── Scraping ──────────────────────────────
     scrape = await do_scrape(email, password,
-                             skip_settings=settings_in_db,
+                             skip_settings=False,
                              profile_id=profile_id)
 
     if scrape['error']:
@@ -356,16 +360,32 @@ async def run_pipeline(
 
     if db and patient_id:
         db.update_scrape_status(patient_id, 'ok')
-        # Primer scrape: guardar settings en BD para no re-scrapear la próxima vez
-        if not settings_in_db and scrape['patient_data'].get('name'):
+        # MyTanita es la fuente de verdad para los datos antropométricos. Se
+        # sincronizan también cuando ya existían, porque el usuario puede haber
+        # corregido sexo, altura o fecha de nacimiento después del alta.
+        fresh = scrape.get('patient_data') or {}
+        if all(fresh.get(key) is not None for key in ('name', 'dob', 'sex', 'height_cm')):
             try:
-                db.sync_patient_settings(patient_id, {
-                    'name':   scrape['patient_data']['name'],
-                    'dob':    scrape['patient_data'].get('dob', ''),
-                    'gender': scrape['patient_data'].get('sex', 'F'),
-                    'height': str(scrape['patient_data'].get('height_cm', 170)),
+                before = patient_row or {}
+                changes = {
+                    key: {'from': old, 'to': new}
+                    for key, old, new in (
+                        ('full_name', before.get('full_name'), fresh['name']),
+                        ('date_of_birth', before.get('date_of_birth'), fresh['dob']),
+                        ('sex', before.get('sex'), fresh['sex']),
+                        ('height_cm', before.get('height_cm'), fresh['height_cm']),
+                    )
+                    if str(old) != str(new)
+                }
+                patient_row = db.sync_patient_settings(patient_id, {
+                    'name':   fresh['name'],
+                    'dob':    fresh['dob'],
+                    'gender': fresh['sex'],
+                    'height': str(fresh['height_cm']),
                 })
-                print("[Pipeline] ✓ Settings guardados en BD")
+                result['profile_changes'] = changes
+                if changes:
+                    print(f"[Pipeline] ✓ Ficha MyTanita actualizada: {list(changes)}")
             except Exception as e:
                 print(f"[Pipeline] ~ No se pudieron guardar settings: {e}")
 
@@ -381,12 +401,17 @@ async def run_pipeline(
                 print(f"[Pipeline] ~ No se pudo sincronizar patient_csvs: {e}")
 
     # ── Datos del paciente ────────────────────
-    pd = scrape['patient_data']
+    pd = scrape.get('patient_data') or {}
+    fallback = patient_row or {}
     patient = PatientInfo(
-        name      = name_override   or pd['name'],
-        age       = age_override    or pd['age'],
-        sex       = sex_override    or pd['sex'],
-        height_cm = height_override or pd['height_cm'],
+        name      = name_override or pd.get('name') or fallback.get('full_name') or 'Paciente',
+        age       = age_override if age_override is not None else (
+            pd.get('age') or _calc_age(fallback.get('date_of_birth'))
+        ),
+        sex       = sex_override or pd.get('sex') or fallback.get('sex') or 'F',
+        height_cm = height_override if height_override is not None else (
+            pd.get('height_cm') or float(fallback.get('height_cm') or 170)
+        ),
     )
     print(f"[Pipeline] Paciente: {patient.name} | {patient.age}a | "
           f"{patient.sex} | {patient.height_cm}cm")
@@ -406,15 +431,12 @@ async def run_pipeline(
             return result
         print(f"[Pipeline] Filtrado a fecha {target_date} → {len(measurements)} mediciones")
 
-    # Dedup: no generar si ya existe un reporte para esta medición exacta
+    # Si ya hay reporte de ese día, se actualiza en el mismo ID. Esto permite
+    # corregir una ficha o tomar una medición posterior sin duplicar reportes.
     check_date = target_date or measurements[-1].date[:10]
-    if db and patient_id:
-        last_date = db.get_last_measurement_date(patient_id)
-        if last_date and last_date[:10] == check_date:
-            print(f"[Pipeline] ~ Ya existe reporte para {check_date} — skip")
-            result['ok'] = True
-            result['skipped'] = True
-            return result
+    existing_report = existing_requested_report
+    if db and patient_id and not existing_report:
+        existing_report = db.get_report_for_date(patient_id, check_date)
 
     latest = measurements[-1]
     ok, missing = _measurement_is_complete_enough(latest)
@@ -470,31 +492,42 @@ async def run_pipeline(
         try:
             # Subir PDF y HTML a Storage
             import uuid
-            report_id = str(uuid.uuid4())
+            report_id = existing_report['id'] if existing_report else str(uuid.uuid4())
             storage_path = db.upload_pdf(nutri_id, report_id, pdf_bytes)
             print(f"[Pipeline] ✓ PDF en Storage: {storage_path}")
             db.upload_html(nutri_id, report_id, html)
             print(f"[Pipeline] ✓ HTML en Storage: {nutri_id}/{report_id}.html")
 
-            # Registrar reporte — report_id fija la PK para que coincida con el path de Storage
+            measurement_payload = {
+                'date':           latest.date,
+                'weight_kg':      latest.weight_kg,
+                'body_fat_pct':   latest.body_fat_pct,
+                'muscle_mass_kg': latest.muscle_mass_kg,
+                'visceral_fat':   latest.visceral_fat,
+                'bmr_kcal':       latest.bmr_kcal,
+                'metabolic_age':  latest.metabolic_age,
+            }
             elapsed = round(time.time() - t_start, 2)
-            report = db.create_report(
-                patient_id    = patient_id,
-                nutri_id      = nutri_id,
-                measurement   = {
-                    'date':           latest.date,
-                    'weight_kg':      latest.weight_kg,
-                    'body_fat_pct':   latest.body_fat_pct,
-                    'muscle_mass_kg': latest.muscle_mass_kg,
-                    'visceral_fat':   latest.visceral_fat,
-                    'bmr_kcal':       latest.bmr_kcal,
-                    'metabolic_age':  latest.metabolic_age,
-                },
-                csv_raw        = scrape['csv_content'],
-                pdf_path       = storage_path,
-                generation_secs = elapsed,
-                report_id      = report_id,
-            )
+            if existing_report:
+                report = db.update_report(
+                    report_id=report_id,
+                    measurement=measurement_payload,
+                    csv_raw=scrape['csv_content'],
+                    pdf_path=storage_path,
+                    generation_secs=elapsed,
+                )
+                result['refreshed'] = True
+                print(f"[Pipeline] ✓ Reporte actualizado: {report_id}")
+            else:
+                report = db.create_report(
+                    patient_id=patient_id,
+                    nutri_id=nutri_id,
+                    measurement=measurement_payload,
+                    csv_raw=scrape['csv_content'],
+                    pdf_path=storage_path,
+                    generation_secs=elapsed,
+                    report_id=report_id,
+                )
             result['report_id'] = report['id']
             print(f"[Pipeline] ✓ Reporte registrado: {report['id']}")
 

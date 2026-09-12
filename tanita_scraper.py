@@ -4,9 +4,12 @@ Soporte multi-perfil: lista todos los perfiles de la cuenta y descarga
 el CSV del perfil correcto mediante change-user-profile/{id}.
 """
 
+from __future__ import annotations
+
 import asyncio
 import io
 import sys
+from datetime import date, datetime
 import pandas as pd
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
 
@@ -157,6 +160,77 @@ async def _download_csv_for_profile(page, profile_id: str | None, email: str) ->
         return f.read()
 
 
+async def scrape_profile_settings(page) -> dict:
+    """Lee y normaliza la ficha del perfil activo en MyTanita."""
+    await page.goto(
+        'https://mytanita.eu/en/user/settings',
+        wait_until='networkidle', timeout=20_000,
+    )
+    raw = await page.evaluate("""() => {
+        const result = {};
+        document.querySelectorAll('*').forEach(el => {
+            const text = (el.innerText || '').trim();
+            const next = el.nextElementSibling;
+            if (!next) return;
+            const value = (next.innerText || '').trim();
+            if (/^Name$/i.test(text))          result.name = value;
+            if (/^Date of birth$/i.test(text)) result.dob = value;
+            if (/^Gender$/i.test(text))        result.gender = value;
+            if (/^Height$/i.test(text))        result.height = value;
+        });
+        return result;
+    }""")
+
+    if not raw.get('name'):
+        lines = [
+            line.strip() for line in (await page.inner_text('body')).split('\n')
+            if line.strip()
+        ]
+        for i, line in enumerate(lines):
+            if line == 'Name' and i + 1 < len(lines):
+                raw['name'] = lines[i + 1]
+            elif line == 'Date of birth' and i + 1 < len(lines):
+                raw['dob'] = lines[i + 1]
+            elif line == 'Gender' and i + 1 < len(lines):
+                raw['gender'] = lines[i + 1]
+            elif line == 'Height' and i + 1 < len(lines):
+                raw['height'] = lines[i + 1]
+
+    dob = None
+    dob_raw = (raw.get('dob') or '').strip()
+    for fmt in ('%d.%m.%Y', '%Y-%m-%d', '%m/%d/%Y'):
+        try:
+            dob = datetime.strptime(dob_raw, fmt).date()
+            break
+        except ValueError:
+            continue
+
+    gender = (raw.get('gender') or '').strip().upper()
+    sex = 'F' if gender.startswith('F') else ('M' if gender else None)
+    try:
+        height_cm = float(''.join(
+            char for char in (raw.get('height') or '')
+            if char.isdigit() or char == '.'
+        ))
+    except ValueError:
+        height_cm = None
+
+    age = None
+    if dob:
+        today = date.today()
+        age = today.year - dob.year - (
+            (today.month, today.day) < (dob.month, dob.day)
+        )
+
+    return {
+        'name': (raw.get('name') or '').strip() or None,
+        'dob': dob.isoformat() if dob else None,
+        'age': age,
+        'sex': sex,
+        'height_cm': height_cm,
+    }
+
+
 # ─────────────────────────────────────────────
 # API PÚBLICA
 # ─────────────────────────────────────────────
@@ -255,7 +329,14 @@ async def scrape_profile_csv(
             if not ok:
                 return _error('login_failed')
 
-            csv_content = await _download_csv_for_profile(page, profile_id, email)
+            if profile_id:
+                await page.goto(
+                    f'https://mytanita.eu/en/user/change-user-profile/{profile_id}',
+                    wait_until='networkidle', timeout=15_000,
+                )
+
+            patient_data = await scrape_profile_settings(page)
+            csv_content = await _download_csv_for_profile(page, None, email)
             df = parse_tanita_csv(csv_content)
             latest = extract_latest(df)
             print(f'[Scraper] Perfil {profile_id}: {len(df)} mediciones, última {latest.get("date","?")}')
@@ -266,6 +347,7 @@ async def scrape_profile_csv(
                 'dataframe': df,
                 'latest': latest,
                 'total': len(df),
+                'patient_data': patient_data,
                 'error': None,
             }
 
@@ -453,14 +535,15 @@ def extract_all_measurements(df: pd.DataFrame) -> list[dict]:
     """Devuelve una lista de dicts (uno por fila) para hacer upsert en patient_csvs."""
     cols = list(df.columns)
     raw = [csv_row_to_dict(df.iloc[i], cols) for i in range(len(df))]
-    # Dedup defensivo por date (last-wins). Filas sin date se descartan aquí
-    # porque upsert_patient_csvs las filtra igual con su continue existente.
+    # El DataFrame viene ordenado del más reciente al más antiguo. Conservamos
+    # la primera fila de cada día para que una segunda/tercera medición del mismo
+    # día reemplace a la anterior en la vista diaria de SmartBioScan.
     seen: dict[str, dict] = {}
     for m in raw:
         date = m.get('date')
         if not date:
             continue
-        seen[date] = m
+        seen.setdefault(date, m)
     return list(seen.values())
 
 

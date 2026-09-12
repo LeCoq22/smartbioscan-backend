@@ -232,6 +232,7 @@ class GenerateReportResponse(BaseModel):
     error: Optional[str] = None
     generation_secs: Optional[float] = None
     skipped: Optional[bool] = None
+    refreshed: Optional[bool] = None
     message: Optional[str] = None
 
 class CreatePatientRequest(BaseModel):
@@ -559,6 +560,7 @@ async def generate_report(
         report_id       = result.get('report_id'),
         pdf_url         = pdf_url,
         generation_secs = elapsed,
+        refreshed        = result.get('refreshed', False),
     )
 
 
@@ -734,15 +736,61 @@ async def sync_patient_csvs(
             raise HTTPException(status_code=422, detail="Credenciales MyTanita inválidas")
         raise HTTPException(status_code=500, detail=error)
 
+    fresh = result.get('patient_data') or {}
+    profile_changes = {}
+    if all(fresh.get(key) is not None for key in ('name', 'dob', 'sex', 'height_cm')):
+        for key, old, new in (
+            ('full_name', patient.get('full_name'), fresh['name']),
+            ('date_of_birth', patient.get('date_of_birth'), fresh['dob']),
+            ('sex', patient.get('sex'), fresh['sex']),
+            ('height_cm', patient.get('height_cm'), fresh['height_cm']),
+        ):
+            if str(old) != str(new):
+                profile_changes[key] = {'from': old, 'to': new}
+        db.sync_patient_settings(patient_id, {
+            'name': fresh['name'],
+            'dob': fresh['dob'],
+            'gender': fresh['sex'],
+            'height': str(fresh['height_cm']),
+        })
+
     meas_list = extract_all_measurements(result['dataframe'])
     count = db.upsert_patient_csvs(patient_id, nutri_id, meas_list)
     db.update_scrape_status(patient_id, 'ok')
 
     latest = result.get('latest') or {}
+    latest_date = latest.get('date')
+    existing_report = (
+        db.get_report_for_date(patient_id, latest_date)
+        if latest_date else None
+    )
+    metric_pairs = (
+        ('weight_kg', 'weight_kg'),
+        ('body_fat_pct', 'body_fat_pct'),
+        ('muscle_mass_kg', 'muscle_mass_kg'),
+        ('visceral_fat', 'visceral_fat'),
+        ('bmr_kcal', 'bmr_kcal'),
+    )
+    measurement_changed = bool(existing_report) and any(
+        abs(
+            float(existing_report.get(report_key) or 0)
+            - float(latest.get(csv_key) or 0)
+        ) > 0.01
+        for report_key, csv_key in metric_pairs
+    )
+    stale_report_id = None
+    if existing_report and (profile_changes or measurement_changed):
+        db.mark_csv_report_stale(patient_id, latest_date[:10])
+        stale_report_id = existing_report['id']
+
     return {
         "ok": True,
         "synced": count,
-        "latest_date": latest.get('date'),
+        "latest_date": latest_date,
+        "profile_updated": bool(profile_changes),
+        "profile_changes": profile_changes,
+        "report_needs_refresh": bool(stale_report_id),
+        "stale_report_id": stale_report_id,
     }
 
 

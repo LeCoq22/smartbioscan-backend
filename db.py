@@ -18,7 +18,7 @@ import logging
 import os
 import hashlib
 import base64
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from supabase import create_client, Client
 
@@ -231,6 +231,43 @@ class DB:
                .execute())
         return res.data[0]['measurement_date'] if res.data else None
 
+    def get_report_for_date(self, patient_id: str, measurement_date: str) -> Optional[dict]:
+        """Retorna el reporte MyTanita del día, si existe."""
+        day = datetime.strptime(measurement_date[:10], '%Y-%m-%d').date()
+        next_day = day + timedelta(days=1)
+        res = (self.client.table('reports')
+               .select('*')
+               .eq('patient_id', patient_id)
+               .eq('source', 'mytanita')
+               .gte('measurement_date', day.isoformat())
+               .lt('measurement_date', next_day.isoformat())
+               .order('measurement_date', desc=True)
+               .limit(1)
+               .execute())
+        return res.data[0] if res.data else None
+
+    def update_report(self, report_id: str, measurement: dict,
+                      csv_raw: str, pdf_path: str,
+                      generation_secs: float) -> dict:
+        """Actualiza un reporte existente sin consumir nuevamente la cuota."""
+        payload = {
+            'measurement_date': measurement.get('date'),
+            'weight_kg': measurement.get('weight_kg'),
+            'body_fat_pct': measurement.get('body_fat_pct'),
+            'muscle_mass_kg': measurement.get('muscle_mass_kg'),
+            'visceral_fat': measurement.get('visceral_fat'),
+            'bmr_kcal': measurement.get('bmr_kcal'),
+            'metabolic_age': measurement.get('metabolic_age'),
+            'csv_raw': csv_raw,
+            'pdf_storage_path': pdf_path,
+            'generation_secs': generation_secs,
+        }
+        res = (self.client.table('reports')
+               .update(payload)
+               .eq('id', report_id)
+               .execute())
+        return res.data[0] if res.data else {}
+
     # ── PDF Storage ───────────────────────────────────────────────────────────
 
     def upload_pdf(self, nutri_id: str, report_id: str,
@@ -436,6 +473,13 @@ class DB:
         self.client.table('patient_csvs').update({
             'report_generated': True,
             'report_id':        report_id,
+        }).eq('patient_id', patient_id).eq('measurement_date', measurement_date).execute()
+
+    def mark_csv_report_stale(self, patient_id: str, measurement_date: str):
+        """Deja disponible la regeneración cuando cambió la ficha o la medición."""
+        self.client.table('patient_csvs').update({
+            'report_generated': False,
+            'report_id': None,
         }).eq('patient_id', patient_id).eq('measurement_date', measurement_date).execute()
 
     def patient_has_settings(self, patient_id: str) -> bool:
