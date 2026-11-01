@@ -25,7 +25,6 @@ from pydantic import BaseModel
 
 logger = logging.getLogger("smartbioscan.subscriptions")
 
-router = APIRouter(prefix="/api/subscriptions", tags=["subscriptions"])
 
 _EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
@@ -208,7 +207,7 @@ async def handle_subscription_preapproval(sdk: mercadopago.SDK, preapproval_id: 
     result = sdk.preapproval().get(preapproval_id)
     if result.get("status") != 200:
         logger.error("preapproval.get(%s) failed: %s", preapproval_id, result.get("response"))
-        return {"ok": True, "detail": "mp_api_error"}
+        raise HTTPException(502, "No se pudo consultar la suscripción en Mercado Pago")
 
     preapproval = result.get("response", {})
     status = preapproval.get("status")
@@ -235,6 +234,10 @@ async def handle_subscription_preapproval(sdk: mercadopago.SDK, preapproval_id: 
 
     nutri = res.data[0]
     nutri_id = nutri["id"]
+
+    from api.billing import managed_preapproval
+    if status == "authorized" and managed_preapproval(db, preapproval_id):
+        return {"ok": True, "detail": "managed_billing_waits_for_payment"}
 
     if status == "authorized":
         # Idempotencia: si ya está activo con este preapproval, ignorar
@@ -340,7 +343,7 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
     token = os.getenv("MP_ACCESS_TOKEN")
     if not token:
         logger.error("MP_ACCESS_TOKEN no configurado para authorized_payment")
-        return {"ok": True, "detail": "mp_token_missing"}
+        raise HTTPException(503, "Pagos no configurados")
 
     async with httpx.AsyncClient(timeout=10.0) as client:
         resp = await client.get(
@@ -353,7 +356,7 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
             "authorized_payment.get(%s) HTTP %s: %s",
             authorized_payment_id, resp.status_code, resp.text[:500],
         )
-        return {"ok": True, "detail": "mp_api_error"}
+        raise HTTPException(502, "No se pudo consultar la suscripción en Mercado Pago")
 
     invoice = resp.json()
     invoice_status = invoice.get("status")
@@ -370,6 +373,10 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
 
     from db import DB
     db = DB()
+
+    # Never let a stale scheduled/rejected notification overwrite a processed receipt.
+    if _payment_event_processed(db, authorized_payment_id):
+        return {"ok": True, "detail": "already_processed"}
 
     if payment_status != "approved":
         _record_payment_event(
@@ -419,6 +426,11 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
         )
         logger.error("authorized_payment: nutri not found for preapproval_id=%s", preapproval_id)
         return {"ok": True, "detail": "nutri_not_found"}
+
+    from api.billing import handle_managed_invoice
+    managed_result = await handle_managed_invoice(db, invoice, preapproval)
+    if managed_result is not None:
+        return managed_result
 
     nutri = res.data[0]
     nutri_id = nutri["id"]
@@ -504,6 +516,14 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
             "max_patients": plan["max_patients"],
         })
 
+    from api.billing import schema_ready, rpc
+    if schema_ready():
+        return rpc(db, 'billing_apply_legacy_renewal', nutri_id=nutri_id,
+            preapproval_id=preapproval_id, invoice_id=authorized_payment_id,
+            expected_end=current_end_str, update=update_data,
+            detail={'action': action, 'invoice_status': invoice_status,
+                    'payment_status': payment_status, 'subscription_end': new_end.isoformat()})
+
     # La cuota mensual se resetea exclusivamente por las RPC de cupo ancladas en
     # subscription_start. No se pone a cero aquí: un webhook tardío no debe borrar
     # reportes ya consumidos en el nuevo ciclo.
@@ -547,6 +567,8 @@ def register_routes(app, get_current_nutri_dep):
     Se llama desde api/main.py pasando la dependencia get_current_nutri.
     """
 
+    router = APIRouter(prefix="/api/subscriptions", tags=["subscriptions"])
+
     @router.post("/init", response_model=InitSubscriptionResponse)
     async def init_subscription(
         body: InitSubscriptionRequest,
@@ -580,6 +602,12 @@ def register_routes(app, get_current_nutri_dep):
                      .execute())
         if not nutri_res.data:
             raise HTTPException(status_code=404, detail="Nutri no encontrado")
+
+        from api.billing import enabled
+        if enabled():
+            current = db.get_nutri(nutri_id)
+            if current and current.get("mp_preapproval_id") and current.get("subscription_status") == "active":
+                raise HTTPException(409, "Gestioná el cambio de plan desde el Dashboard")
 
         payer_email = nutri_res.data["email"]
         # Si el nutri indicó el email de su cuenta de MercadoPago (porque difiere del
@@ -681,6 +709,10 @@ def register_routes(app, get_current_nutri_dep):
         if not nutri_res.data:
             raise HTTPException(status_code=404, detail="Nutri no encontrado")
 
+        from api.billing import schema_ready, pending
+        if schema_ready() and pending(db, nutri_id):
+            raise HTTPException(409, "Hay un cambio pendiente; resolvelo antes de cancelar la suscripción")
+
         nutri = nutri_res.data
         preapproval_id = nutri.get("mp_preapproval_id")
 
@@ -723,3 +755,25 @@ def register_routes(app, get_current_nutri_dep):
         }
 
     app.include_router(router)
+
+
+async def handle_recurring_payment(sdk, payment):
+    """Resolve a payment notification to its subscription invoice, never by payer email."""
+    payment_id = str(payment['id'])
+    token = os.getenv('MP_ACCESS_TOKEN')
+    if not token:
+        raise HTTPException(503, 'Pagos no configurados')
+    async with httpx.AsyncClient(timeout=20) as client:
+        response = await client.get('https://api.mercadopago.com/authorized_payments/search',
+            params={'payment_id': payment_id}, headers={'Authorization': f'Bearer {token}'})
+    if response.status_code != 200:
+        raise HTTPException(502, 'No se pudo consultar la factura del pago')
+    matches = [i for i in response.json().get('results', [])
+               if str((i.get('payment') or {}).get('id')) == payment_id and i.get('preapproval_id')]
+    if len(matches) != 1:
+        # MP may notify a payment before its invoice is searchable; ask for a retry.
+        raise HTTPException(503, 'La factura del pago todavía no está disponible para conciliar')
+    result = await handle_authorized_payment(sdk, str(matches[0]['id']))
+    if payment.get('status') == 'approved' and result.get('detail', '').startswith('payment_status='):
+        raise HTTPException(503, 'El estado de la factura todavía no refleja el pago aprobado')
+    return result

@@ -204,6 +204,10 @@ class DB:
             payload['native_measurement_id'] = native_measurement_id
         if report_id:
             payload['id'] = report_id
+        from api.billing import schema_ready
+        if schema_ready():
+            return self.client.rpc('billing_create_report', {'p_report': payload}).execute().data
+
         res = self.client.table('reports').insert(payload).execute()
         report = res.data[0]
 

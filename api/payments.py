@@ -249,6 +249,16 @@ async def mp_webhook(
         logger.error("No se pudo obtener pago %s: %s", data_id, payment)
         raise HTTPException(status_code=502, detail="No se pudo consultar el pago en MP")
 
+    from api.billing import handle_payment
+    billing_result = await handle_payment(payment)
+    if billing_result is not None:
+        return billing_result
+
+    # Recurring payments do not contain the legacy Bricks metadata.plan_id.
+    if not (payment.get("metadata") or {}).get("plan_id"):
+        from api.subscriptions import handle_recurring_payment
+        return await handle_recurring_payment(sdk, payment)
+
     status = payment.get("status")
     if status != "approved":
         logger.info("Pago %s status=%s — ignorado", data_id, status)

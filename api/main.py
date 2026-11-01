@@ -443,6 +443,8 @@ from api.admin_accounts import register_routes as _register_admin_account_routes
 _register_admin_account_routes(app, get_admin_nutri)
 
 _register_subscription_routes(app, get_current_nutri)
+from api.billing import register_routes as _register_billing_routes
+_register_billing_routes(app, get_current_nutri)
 _register_native_measurement_routes(app, get_current_nutri)
 
 
