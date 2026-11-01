@@ -2,6 +2,12 @@
 
 Implementación recuperada el 01/11/2026 de los worktrees del 15/10/2026, en la rama `codex/billing-plan-management` de ambos repositorios. No se aplicó esta migración a producción ni se habilitaron compras. No se realizaron cargos ni cambios de contratos reales durante esta recuperación.
 
+**Actualización 02/11/2026:** la prueba real de sandbox confirmó que Mercado Pago
+ignora la nueva frecuencia y fecha al actualizar un contrato existente, aunque
+acepta el importe. El flujo actual de cambios de abono **no debe habilitarse**.
+Crear un contrato nuevo sí conserva la programación, pero requiere autorización
+del comprador. Ver [evidencia y validaciones pendientes](mp-subscription-sandbox-20261102.md).
+
 ## Reglas implementadas
 
 - Básico → Plus: pago único del nuevo plan. Tras confirmación del pago se pausa el débito anterior. Si el cupo base está agotado, activa el cupo completo; si queda cupo base, espera a agotarlo o al fin del ciclo. No exige gastar los créditos comprados ni administrativos: ambos se conservan. Al activar, actualiza importe, frecuencia y siguiente cobro en Mercado Pago; comprueba el resultado con GET. Un fallo conserva el trabajo pendiente para reintentar.

@@ -82,6 +82,28 @@ async def test_provider_must_confirm_date_amount_and_frequency(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_mp_success_that_ignores_schedule_is_not_a_completed_change(monkeypatch):
+    # Replays the actual sandbox response observed on 02/11/2026 (Madrid).
+    # PUT returned success and changed the price, but retained the old schedule.
+    observed = {
+        'status': 'authorized', 'next_payment_date': '2026-11-03T19:00:42.000-04:00',
+        'auto_recurring': {'transaction_amount': 65000, 'currency_id': 'ARS',
+                           'frequency': 1, 'frequency_type': 'months'},
+    }
+    monkeypatch.setattr(billing, 'mp', AsyncMock(side_effect=[observed, observed]))
+    confirm = MagicMock()
+    monkeypatch.setattr(billing, 'rpc', confirm)
+    order = {'id': 'order', 'kind': 'change', 'mode': 'exhaustion',
+             'status': 'syncing', 'preapproval_id': 'sandbox', 'nutri_id': 'owner',
+             'target_plan': {'title': 'Plus', 'unit_price': 65000, 'months': 1},
+             'new_end': '2026-12-16'}
+    with pytest.raises(billing.HTTPException) as error:
+        await billing.sync_order(MagicMock(), order)
+    assert error.value.status_code == 502
+    confirm.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_no_catalog_fallback_without_a_paid_receipt(monkeypatch):
     monkeypatch.setattr(billing,'mp',AsyncMock(return_value={'results':[]}))
     with pytest.raises(billing.HTTPException,match='409'):
