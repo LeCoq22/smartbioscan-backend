@@ -139,12 +139,15 @@ begin
  select * into o from public.billing_orders where id=p_order_id for update;
  select * into prior from public.billing_receipts where payment_id=p_payment_id;
  if found and prior.order_id<>o.id then return jsonb_build_object('ok',false,'reason','payment_conflict'); end if;
- if found and prior.status=p_status then
+ if found and (prior.status=p_status or (prior.status in ('approved','refunded','charged_back','partially_refunded') and p_status in ('pending','in_process','authorized'))) then
   return jsonb_build_object('ok',true,'nutri_id',o.nutri_id,'status',o.status,'duplicate',true); end if;
  insert into public.billing_receipts(payment_id,order_id,nutri_id,amount,currency,status)
  values(p_payment_id,o.id,o.nutri_id,p_amount,p_currency,p_status)
  on conflict(payment_id) do update set status=excluded.status,processed_at=now();
  if p_status in ('refunded','charged_back','partially_refunded') then
+  if o.payment_id is not null and o.payment_id<>p_payment_id then
+   return jsonb_build_object('ok',true,'status','duplicate_payment_reversed');
+  end if;
   update public.billing_pack_credits set remaining=0 where order_id=o.id;
   update public.billing_orders set review_reason='payment_reversed',status='review' where id=o.id;
   return jsonb_build_object('ok',true,'status','review');

@@ -40,7 +40,7 @@ Frontend recuperado en la rama `codex/billing-plan-management`:
 
 ## Integridad y errores
 
-Los clientes no envían precios, dueño del pago ni créditos a conceder. El JWT determina la cuenta. Los importes y condiciones se guardan con la orden. Pagos duplicados no acreditan saldo dos veces. Un cobro duplicado real, importe incorrecto, pago fuera del período o un reverso se registra para revisión; no se intenta un reembolso real automáticamente. Los paquetes revocados pierden sólo el saldo no consumido. Las tablas de órdenes y créditos tienen RLS de lectura por propietario; mutaciones y recibos son exclusivas del backend.
+Los clientes no envían precios, dueño del pago ni créditos a conceder. El JWT determina la cuenta. Los importes y condiciones se guardan con la orden. Pagos duplicados no acreditan saldo dos veces. Un cobro duplicado real, importe incorrecto, pago fuera del período o un reverso se registra para revisión; no se intenta un reembolso real automáticamente. Los paquetes revocados pierden sólo el saldo no consumido. Devolver un segundo cobro duplicado no revoca los créditos de la compra original; un aviso pendiente atrasado no degrada un recibo ya aprobado. Un upgrade sin pago confirmado conserva el cupo y vencimiento anteriores. Las tablas de órdenes y créditos tienen RLS de lectura por propietario; mutaciones y recibos son exclusivas del backend.
 
 Un bloqueo por cuenta serializa las actualizaciones en Mercado Pago. Inserción y consumo de un reporte son atómicos. Una protección de cuenta impide a un usuario corriente editar campos financieros o privilegios a través de la antigua política de perfil; conserva las operaciones de administradores y edición de nombre/teléfono/firma.
 

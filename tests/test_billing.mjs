@@ -46,7 +46,10 @@ let o=await create(); assert.equal(o.status,'checkout')
 let payment=uuid(); await pay(o,payment); assert.equal((await gate()).remaining,40)
 await pay(o,payment); assert.equal((await gate()).remaining,40)
 assert.equal((await row()).subscription_end,await date(30))
-await pay(o,uuid()); assert.equal((await gate()).remaining,40) // second payment needs refund, never double grant
+const duplicatePayment=uuid();
+await pay(o,duplicatePayment); assert.equal((await gate()).remaining,40) // second payment needs refund, never double grant
+await pay(o,duplicatePayment,o.amount,'refunded'); assert.equal((await gate()).remaining,40); // Refund the extra charge, retain the valid purchase.
+await pay(o,payment,o.amount,'pending'); await pay(o,payment); assert.equal((await gate()).remaining,40);
 for(let i=0;i<35;i++) await db.query('select increment_report_count($1)',[owner])
 assert.equal((await gate()).remaining,5)
 // A purchased balance is usable even if it was bought in a previous cycle.
@@ -54,6 +57,7 @@ await db.query("update billing_pack_credits set created_at=now()-interval '2 yea
 assert.equal((await gate()).remaining,5)
 let bad=await create(); assert.equal((await pay(bad,uuid(),1)).status,'review'); assert.equal((await gate()).remaining,5)
 let up=await create({kind:'change',mode:'exhaustion',reports:0,target_plan:plus,requested_plan:plus.id,amount:65000})
+await db.query('select billing_tick($1)',[owner]); assert.equal((await row()).max_reports_month,30); // Never activate an unpaid upgrade.
 await pay(up)
 await db.query('select billing_tick($1)',[owner]); assert.equal((await row()).max_reports_month,30) // not paused yet
 await db.query('select billing_pause_confirmed($1)',[up.id]); await db.query('select billing_tick($1)',[owner])
