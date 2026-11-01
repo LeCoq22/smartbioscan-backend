@@ -27,7 +27,7 @@ def enabled():
 def require_enabled():
     if not enabled():
         raise HTTPException(503,'La gestión de planes todavía no está habilitada')
-    if not os.getenv('MP_WEBHOOK_SECRET') or os.getenv('BILLING_EXPIRY_POLICY') not in ('activation','extend_expiry'):
+    if not os.getenv('MP_WEBHOOK_SECRET') or os.getenv('BILLING_EXPIRY_POLICY','extend_expiry') != 'extend_expiry':
         raise HTTPException(503,'La configuración de cobros todavía no está completa')
 
 
@@ -186,7 +186,7 @@ def register_routes(app,get_current_nutri):
         reviews=db.client.table('billing_orders').select('review_reason').eq('nutri_id',nutri_id).in_('status',['review','applied']).order('created_at',desc=True).limit(20).execute().data
         return {'enabled':True,'current_plan':current,'subscription_end':n['subscription_end'],
                 'cycle_end':cycle_end.isoformat(),'quota':quota,
-                'expiry_policy':os.getenv('BILLING_EXPIRY_POLICY'),
+                'expiry_policy':os.getenv('BILLING_EXPIRY_POLICY','extend_expiry'),
                 'plans':[{'id':key,**value} for key,value in PLANS.items()],
                 'packs':[{'reports':q,'amount':str(pack_price(paid,current['months'],current['max_reports_month'],q))} for q in (10,)],
                 'pending':order,'paid_price':paid,'review_required':any(r.get('review_reason') for r in reviews)}
@@ -241,7 +241,7 @@ def register_routes(app,get_current_nutri):
                 'current_plan':current,'preapproval_id':n['mp_preapproval_id'],
                 'previous_end':str(n['subscription_end'])[:10],
                 'cycle_start':cs.isoformat(),'cycle_end':ce.isoformat(),
-                'expiry_policy':os.getenv('BILLING_EXPIRY_POLICY','activation')})
+                'expiry_policy':os.getenv('BILLING_EXPIRY_POLICY','extend_expiry')})
         if order['status']=='scheduled':
             await reconcile_account(db,nutri_id)
             return {'order_id':order['id'],'status':'scheduled'}

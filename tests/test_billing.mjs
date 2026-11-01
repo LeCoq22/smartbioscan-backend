@@ -129,6 +129,17 @@ assert.equal(lateResult.ok,true);
 assert.equal((await gate()).pack_remaining,packBefore+10);
 await pay(late,latePayment,late.amount,'partially_refunded');
 assert.equal((await gate()).pack_remaining,packBefore);
+// Preserve the old expiry when upgrading, while retaining independent 30-day quotas.
+await db.query("update nutris set subscription_end=billing_today()+15,subscription_start=billing_today()-15,reports_this_month=30,reports_month_reset=billing_today(),max_reports_month=30,billing_current_plan=null where id=$1",[owner]);
+const preserving=await create({kind:'change',mode:'exhaustion',reports:0,target_plan:plus,requested_plan:plus.id,amount:65000,previous_end:await date(15),expiry_policy:'extend_expiry'});
+await pay(preserving);
+await db.query('select billing_pause_confirmed($1)',[preserving.id]);
+await db.query('select billing_tick($1)',[owner]);
+assert.equal((await row()).subscription_end,await date(45));
+assert.equal((await gate()).pack_remaining,5);
+await db.query("update nutris set subscription_start=billing_today()-30,reports_this_month=99,reports_month_reset=billing_today()-1 where id=$1",[owner]);
+assert.equal((await gate()).used,0);
+assert.equal((await gate()).remaining,105);
 // Tenant isolation and no ability to mint a purchase/payment via browser RPC.
 await db.exec(`set role authenticated; select set_config('test.uid','${other}',false);`)
 assert.equal((await db.query('select * from billing_orders')).rows.length,0)

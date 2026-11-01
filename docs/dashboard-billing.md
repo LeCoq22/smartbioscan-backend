@@ -11,12 +11,11 @@ Implementación recuperada el 01/11/2026 de los worktrees del 15/10/2026, en la 
 - Precio de paquetes: importe efectivamente pagado / (meses × reportes del cupo mensual) × cantidad. Se redondea el total a dos decimales. No se usa el precio de catálogo para sustituir un comprobante desconocido. En contratos anteriores se consulta el comprobante aprobado en MP; en los nuevos se conserva el precio aplicado.
 - Cancelación de un cambio aún no pagado o una bajada programada: restaura la configuración anterior del proveedor antes de cerrar la operación. Los cambios ya pagados no se cancelan automáticamente desde esta pantalla.
 
-## Dos decisiones comerciales pendientes de confirmación
+## Regla comercial confirmada el 01/11/2026
 
-Se preguntaron durante la tarea y no hubo respuesta al preparar esta implementación:
+Claudio confirmó conservar los días ya pagados: el nuevo período se suma al vencimiento actual (`extend_expiry`). Si el contrato ya venció, se cuenta desde la activación. El código y la configuración de ejemplo usan esa regla por defecto; el checkout rechaza la configuración anterior `activation` para no descartar días por error.
 
-1. Si se activa Plus el día 15, ¿los 30 días se cuentan desde ese día o se suman al vencimiento anterior? Se implementan ambas políticas; `BILLING_EXPIRY_POLICY=activation` es el valor de ejemplo y `extend_expiry` suma al vencimiento anterior. El checkout no se habilita sin configurar explícitamente una política. No activar hasta confirmar.
-2. Se mantiene el modelo semestral existente: seis cupos mensuales, con bajada al finalizar los seis meses. Una mejora al agotarse el cupo mensual puede anticipar el fin del contrato anterior bajo la política `activation`; no se ha añadido un prorrateo/reembolso por meses futuros. Confirmar esta regla para semestrales antes de habilitarlos.
+También se conservan los días pendientes de un contrato semestral. No hay reembolso ni prorrateo: se añade la duración comprada al vencimiento vigente. La cuota mensual continúa renovándose por ciclo aunque el primer contrato resultante sea más largo por los días conservados.
 
 Para los nuevos ciclos mensuales se usan 30 días exactos. Los contratos anteriores conservan su aniversario por mes calendario hasta cambiar. Las fechas de negocio se interpretan en America/Argentina/Buenos_Aires; el campo de vencimiento existente tiene precisión de día, no de hora.
 
@@ -53,19 +52,19 @@ Los avisos `payment` de débitos recurrentes se resuelven por ID de pago a la fa
 
 ## Verificación realizada el 01/11/2026
 
-- 56 pruebas Python dirigidas de billing, suscripciones y administración pasan.
+- 59 pruebas Python dirigidas de billing, suscripciones y administración pasan.
 - Escenarios SQL sobre PostgreSQL embebido PGlite: cupos, duplicados, precio incorrecto, saldo sin vencimiento, pago confirmado después del cierre del checkout, mejora inmediata/diferida, bajada, devolución de paquetes, cancelación, renovación idempotente, bloqueo de worker, propiedad/RLS y creación atómica de reportes.
 - 4 pruebas de navegador del panel pasan; compilación TypeScript/Vite correcta.
 - La revisión visual del 15/10 fue de la versión anterior; no se reutiliza como validación de esta recuperación.
-- Suite `tests/`: 126 pasan y 1 falla en el refresco MyTanita. Se reprodujo el mismo fallo en el commit base sin estos cambios.
+- Suite `tests/` antes de incorporar la regla confirmada: 126 pasan y 1 falla en el refresco MyTanita. Se reprodujo el mismo fallo en el commit base sin estos cambios.
 - La suite global desde la raíz incluye scripts de integración que requieren dependencias y credenciales adicionales; no se afirma que esos scripts hayan pasado.
 
 ## Antes de habilitar
 
-1. Confirmar las dos decisiones comerciales anteriores y revisar el tratamiento de cuotas futuras semestrales.
+1. Regla comercial confirmada: `BILLING_EXPIRY_POLICY=extend_expiry`. Verificarla en el entorno de despliegue.
 2. Aplicar la migración primero en staging. Se probaron funciones y RLS en PostgreSQL embebido, no se ejecutaron asesores sobre una instancia Supabase remota.
 3. Configurar firma del webhook, URLs, `BILLING_SCHEMA_READY=true` y la política de vencimiento. Mantener `BILLING_MANAGEMENT_ENABLED=false` hasta completar la prueba de proveedor.
-4. Probar con cuentas de prueba de Mercado Pago: checkout, pausa/reactivación, modificación de frecuencia a 30 días/6 meses y **aceptación de `next_payment_date` en la actualización**. La documentación pública muestra esta fecha en las respuestas; su actualización en este flujo todavía no fue verificada contra MP real. El código exige comprobarla con GET y no marca la sincronización como completa si no coincide. Si la API no permite la reprogramación exacta, debe adaptarse el mecanismo antes de habilitar compras.
+4. Probar con cuentas de prueba de Mercado Pago: checkout, pausa/reactivación, modificación de frecuencia a 30 días/6 meses y **aceptación de `next_payment_date` en la actualización**. La referencia ampliada de MP, revisada el 01/11, solo lista importe/moneda en `auto_recurring` de la actualización y no expone frecuencia ni `next_payment_date` como parámetros editables. La fecha aparece en las respuestas; su actualización en este flujo todavía no fue verificada contra MP real. El código exige comprobarla con GET y no marca la sincronización como completa si no coincide. Si la API no permite la reprogramación exacta, debe adaptarse el mecanismo antes de habilitar compras.
 5. Instalar el worker cada minuto, con exclusión/reintentos ya soportados y alerta ante fallo. Verificar llegada tardía, repetición y desorden de webhooks, y conciliación de cobros del calendario anterior.
 6. Probar migración y despliegue coordinado con una cuenta de staging; recién entonces habilitar la función. La consola de Railway confirmó que la firma del webhook y las URLs existen, pero no están configurados los indicadores BILLING ni MP_TEST_ACCESS_TOKEN. No se imprimieron claves. Aún no se desplegó esta rama.
 

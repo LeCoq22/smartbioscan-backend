@@ -14,7 +14,8 @@ def cycle_bounds(nutri, today):
     start = date.fromisoformat(str(nutri['subscription_start'])[:10])
     end = date.fromisoformat(str(nutri['subscription_end'])[:10])
     if nutri.get('billing_current_plan') and nutri['subscription_type']=='monthly':
-        return start,end
+        cycle_start = start + timedelta(days=max(0, (today-start).days // 30) * 30)
+        return cycle_start, min(cycle_start + timedelta(days=30), end)
     n = max(0,(today.year-start.year)*12 + today.month-start.month)
     if add_months(start,n)>today:
         n=max(0,n-1)
@@ -36,7 +37,7 @@ def change_mode(current, target):
     return 'exhaustion' if target['max_reports_month']>current['max_reports_month'] else 'expiry'
 
 
-def new_end(start, current_end, months, policy='activation'):
+def new_end(start, current_end, months, policy='extend_expiry'):
     if policy not in ('activation','extend_expiry'):
         raise ValueError('Unknown expiry policy')
     base = max(start,current_end) if policy=='extend_expiry' else start

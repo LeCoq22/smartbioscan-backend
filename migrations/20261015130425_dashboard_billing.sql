@@ -68,7 +68,8 @@ create policy billing_pack_read on public.billing_pack_credits for select to aut
 
 create function public.billing_cycle_start(n public.nutris) returns date language sql stable set search_path='' as $$
  select case when n.billing_current_plan is not null and n.subscription_type='monthly'
-   then n.subscription_start else public.cupo_cycle_start(n.subscription_start,public.billing_today()) end;
+   then n.subscription_start + greatest(0,(public.billing_today()-n.subscription_start)/30)*30
+   else public.cupo_cycle_start(n.subscription_start,public.billing_today()) end;
 $$;
 
 -- Both purchased and administrative credits survive renewal and plan changes.

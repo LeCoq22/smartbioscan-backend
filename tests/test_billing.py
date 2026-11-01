@@ -26,7 +26,7 @@ def test_plan_change_timing_and_dates():
     basic={'id':'basic','max_reports_month':30}; plus={'id':'plus','max_reports_month':100}
     assert change_mode(basic,plus)=='exhaustion'
     assert change_mode(plus,basic)=='expiry'
-    assert new_end(date(2026,10,15),date(2026,10,30),1)==date(2026,11,14)
+    assert new_end(date(2026,10,15),date(2026,10,30),1,'activation')==date(2026,11,14)
     assert new_end(date(2026,10,15),date(2026,10,30),1,'extend_expiry')==date(2026,11,29)
     assert new_end(date(2026,8,31),date(2026,8,31),6)==date(2027,2,28)
 
@@ -146,3 +146,20 @@ async def test_provider_outage_requests_retry(monkeypatch):
     with pytest.raises(billing.HTTPException) as exc:
         await subscriptions.handle_authorized_payment(MagicMock(),'invoice')
     assert exc.value.status_code==502
+
+
+def test_confirmed_policy_preserves_prepaid_days_by_default():
+    assert new_end(date(2026,10,15),date(2026,10,30),1)==date(2026,11,29)
+    assert new_end(date(2026,10,15),date(2026,12,30),6)==date(2027,6,30)
+
+def test_extended_monthly_contract_still_refreshes_quota_every_thirty_days():
+    n={'subscription_start':'2026-10-15','subscription_end':'2026-11-29',
+       'subscription_type':'monthly','billing_current_plan':{'id':'plus'}}
+    assert cycle_bounds(n,date(2026,11,13))==(date(2026,10,15),date(2026,11,14))
+    assert cycle_bounds(n,date(2026,11,14))==(date(2026,11,14),date(2026,11,29))
+
+def test_old_activation_configuration_cannot_discard_paid_days(monkeypatch):
+    monkeypatch.setenv('BILLING_MANAGEMENT_ENABLED','true')
+    monkeypatch.setenv('MP_WEBHOOK_SECRET','test')
+    monkeypatch.setenv('BILLING_EXPIRY_POLICY','activation')
+    with pytest.raises(billing.HTTPException): billing.require_enabled()
