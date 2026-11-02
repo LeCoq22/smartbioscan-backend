@@ -40,7 +40,7 @@ async def recover_replacement_invoice(db, order):
     provider=order['renewal_preapproval_id']
     offset=0
     while True:
-        query=urlencode({'preapproval_id':provider,'limit':100,'offset':offset})
+        query=urlencode({'preapproval_id':provider,'offset':offset})
         page=await mp('GET','/authorized_payments/search?'+query)
         invoices=page.get('results') or []
         for item in invoices:

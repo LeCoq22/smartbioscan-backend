@@ -57,18 +57,23 @@ async def reconcile(apply: bool) -> dict:
         for nutri in due:
             preapproval_id = nutri["mp_preapproval_id"]
             try:
-                response = await client.get(
-                    "https://api.mercadopago.com/authorized_payments/search",
-                    params={"preapproval_id": preapproval_id, "limit": 100},
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                response.raise_for_status()
-                invoices = sorted(
-                    (response.json().get("results") or []),
-                    key=lambda item: item.get("debit_date")
-                    or item.get("date_created")
-                    or "",
-                )
+                invoices = []
+                offset = 0
+                while True:
+                    response = await client.get(
+                        "https://api.mercadopago.com/authorized_payments/search",
+                        # MP rejects explicit limit=20/100; use its default page size.
+                        params={"preapproval_id": preapproval_id, "offset": offset},
+                        headers={"Authorization": f"Bearer {token}"},
+                    )
+                    response.raise_for_status()
+                    page = response.json()
+                    rows = page.get("results") or []
+                    invoices.extend(item for item in rows if item.get("preapproval_id") == preapproval_id)
+                    offset += len(rows)
+                    if not rows or offset >= (page.get("paging") or {}).get("total", offset):
+                        break
+                invoices.sort(key=lambda item: item.get("debit_date") or item.get("date_created") or "")
                 due_date = str(
                     nutri.get("subscription_next_billing_date") or ""
                 )[:10]

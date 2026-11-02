@@ -1,6 +1,6 @@
 # Dashboard: cambios de plan y paquetes
 
-Implementación recuperada el 01/11/2026 de los worktrees del 15/10/2026, en la rama `codex/billing-plan-management` de ambos repositorios. No se aplicó esta migración a producción ni se habilitaron compras. No se realizaron cargos ni cambios de contratos reales durante esta recuperación.
+Implementación recuperada el 01/11/2026 de los worktrees del 15/10/2026, en la rama `codex/billing-plan-management` de ambos repositorios. La migración y los despliegues se publicaron el 02/11/2026, con autorización explícita de Claudio para activar producción. No se generaron cargos reales durante las pruebas.
 
 **Actualización 02/11/2026:** la prueba de sandbox confirmó que Mercado Pago
 ignora la nueva frecuencia y fecha al actualizar un contrato existente. Se
@@ -58,7 +58,7 @@ Los avisos `payment` de débitos recurrentes se resuelven por ID de pago a la fa
 
 ## Verificación realizada el 02/11/2026
 
-- 67 pruebas Python dirigidas de billing, suscripciones y administración pasan.
+- 68 pruebas Python dirigidas de billing, suscripciones y administración pasan.
 - Escenarios SQL sobre PostgreSQL embebido PGlite: cupos, duplicados, precio incorrecto, saldo sin vencimiento, pago confirmado después del cierre del checkout, mejora inmediata/diferida, bajada, devolución de paquetes, cancelación, renovación idempotente, bloqueo de worker, propiedad/RLS y creación atómica de reportes.
 - 6 pruebas de navegador del panel pasan; compilación TypeScript/Vite correcta.
 - La revisión visual del 15/10 fue de la versión anterior; no se reutiliza como validación de esta recuperación.
@@ -74,6 +74,6 @@ Los avisos `payment` de débitos recurrentes se resuelven por ID de pago a la fa
 5. Sólo después de comprobar los servicios, habilitar `BILLING_MANAGEMENT_ENABLED=true`. Para detener nuevas compras basta desactivar esta última; mantener esquema y conciliación mientras existan operaciones.
 6. Verificar panel autenticado, importe y plan vigente. No se modifica María Ignacia Matteo sin su pago aprobado.
 
-Estado al preparar esta revisión: migración todavía no aplicada y ramas aún no desplegadas. Registrar la publicación y comprobación final al completarlas.
+Estado 02/11/2026: migración aplicada, backend `91676a7` y frontend `ee931bc` publicados en `main`; los cuatro indicadores de activación fueron aplicados en Railway. La comprobación posterior encontró cero tablas billing sin RLS y cero tablas billing escribibles por clientes. Los asesores de seguridad conservan las 13 observaciones previas, sin observaciones nuevas. Salud HTTP 200 y nuevo endpoint presentes. Se añadió `a4c2318` para emitir inmediatamente los resultados de conciliación en logs. La primera pasada detectó que Mercado Pago rechaza el parámetro `limit` en búsquedas de facturas. Se reprodujo en sandbox y se ajustó la recuperación para usar el tamaño predeterminado con paginación por `offset`. Pendiente de comprobar la primera pasada de esa corrección.
 
 Fuentes del proveedor consultadas: [gestión de suscripciones](https://www.mercadopago.com.ar/developers/es/docs/subscriptions/subscription-management), [actualización de preapproval](https://www.mercadopago.com.ar/developers/es/reference/online-payments/subscriptions/update-preapproval/put), [preferencias de Checkout Pro](https://www.mercadopago.com.ar/developers/en/reference/online-payments/checkout-pro-preferences/create-preference/post).

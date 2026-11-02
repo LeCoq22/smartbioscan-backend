@@ -73,7 +73,7 @@ entonces se pausa el contrato anterior; el nuevo plan no se acredita hasta un
 cobro aprobado. Cancelar la programación cancela primero el reemplazo y luego
 restaura el contrato anterior. Un calendario incorrecto se pausa para revisión.
 
-Pruebas locales: 67 Python, escenarios SQL de permisos/cuotas/idempotencia y
+Pruebas locales: 68 Python, escenarios SQL de permisos/cuotas/idempotencia y
 6 pruebas de navegador. Compilación frontend correcta. Se comprobó la migración
 contra el esquema remoto en una transacción revertida. Estas pruebas no
 simulan el transcurso de los 45 días hasta un débito futuro real del proveedor;
@@ -85,3 +85,12 @@ requiere pago aprobado.
 Referencias: [crear suscripción](https://www.mercadopago.com.ar/developers/es/reference/online-payments/subscriptions/create-preapproval/post),
 [actualizar suscripción](https://www.mercadopago.com.ar/developers/es/reference/online-payments/subscriptions/update-preapproval/put),
 [tarjetas de prueba](https://www.mercadopago.com.ar/developers/es/docs/your-integrations/test/cards).
+
+## Consulta de facturas
+
+La primera conciliación productiva devolvió HTTP 400 al enviar `limit=100`.
+Se reprodujo en sandbox: tanto `limit=100` como `limit=20` devuelven
+`Invalid value for limit`. Omitir `limit`, manteniendo `offset=0`, devuelve
+HTTP 200 con tamaño predeterminado de 12. La recuperación usa ese tamaño y
+avanza `offset` hasta completar las páginas; filtra siempre el contrato exacto.
+La prueba de regresión verifica paginación y descarta facturas de otra suscripción.

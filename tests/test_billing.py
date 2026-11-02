@@ -297,3 +297,27 @@ async def test_reconciliation_loop_recovers_from_failure(monkeypatch):
         await worker.run_forever()
     assert run.await_count==2
     assert sleep.call_args_list[0].args==(60,)
+
+
+@pytest.mark.asyncio
+async def test_invoice_recovery_uses_provider_default_pagination(monkeypatch):
+    from scripts import reconcile_mp_subscriptions as worker
+    db=MagicMock()
+    db.client.table.return_value.select.return_value.not_.is_.return_value.lte.return_value.execute.return_value.data=[{
+        'id':'owner','mp_preapproval_id':'old','subscription_next_billing_date':'2030-11-16T00:00:00Z'}]
+    monkeypatch.setattr(worker,'DB',lambda:db)
+    monkeypatch.setenv('MP_ACCESS_TOKEN','test')
+    pages=[{'results':[{'id':'a','preapproval_id':'other','payment':{'status':'approved'},'debit_date':'2030-11-16'}], 'paging':{'total':2}},
+           {'results':[{'id':'b','preapproval_id':'old','payment':{'status':'approved'},'debit_date':'2030-11-16'}], 'paging':{'total':2}}]
+    responses=[]
+    for page in pages:
+        response=MagicMock(); response.json.return_value=page; responses.append(response)
+    client=MagicMock(); client.get=AsyncMock(side_effect=responses)
+    context=MagicMock(); context.__aenter__=AsyncMock(return_value=client); context.__aexit__=AsyncMock()
+    monkeypatch.setattr(worker.httpx,'AsyncClient',lambda **kw:context)
+    handler=AsyncMock(return_value={'ok':True}); monkeypatch.setattr(worker,'handle_authorized_payment',handler)
+    result=await worker.reconcile(apply=True)
+    assert result['errors']==[] and result['processed']==1
+    assert [c.kwargs['params'] for c in client.get.call_args_list]==[
+        {'preapproval_id':'old','offset':0},{'preapproval_id':'old','offset':1}]
+    assert handler.call_args.args[1]=='b'
