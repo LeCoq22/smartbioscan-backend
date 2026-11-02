@@ -94,3 +94,5 @@ Se reprodujo en sandbox: tanto `limit=100` como `limit=20` devuelven
 HTTP 200 con tamaño predeterminado de 12. La recuperación usa ese tamaño y
 avanza `offset` hasta completar las páginas; filtra siempre el contrato exacto.
 La prueba de regresión verifica paginación y descarta facturas de otra suscripción.
+
+La corrección `95e8d64` se desplegó y produjo dos pasadas de conciliación consecutivas sin errores en producción.
