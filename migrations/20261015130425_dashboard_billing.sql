@@ -21,6 +21,7 @@ create table public.billing_orders (
  paid_price numeric(12,2) not null check(paid_price>0),
  target_plan jsonb, current_plan jsonb not null,
  preapproval_id text not null,
+ renewal_preapproval_id text unique, renewal_init_point text, renewal_due date,
  previous_end date not null, cycle_start date not null, cycle_end date not null,
  expiry_policy text not null check(expiry_policy in ('activation','extend_expiry')),
  payment_id text unique,
@@ -37,6 +38,7 @@ create table public.billing_orders (
 create unique index billing_one_change on public.billing_orders(nutri_id)
  where kind='change' and status in ('checkout','paid','scheduled','syncing','cancelling');
 create index billing_orders_owner on public.billing_orders(nutri_id,created_at);
+create index billing_orders_old_contract on public.billing_orders(preapproval_id);
 create index billing_work on public.billing_orders(status) where status in ('paid','scheduled','syncing','cancelling');
 
 create table public.billing_pack_credits (
@@ -193,12 +195,13 @@ begin
  q:=public.can_generate_report(p_nutri_id);
  if o.mode='exhaustion' and greatest(n.max_reports_month-coalesce((q->>'used')::integer,n.max_reports_month),0)>0 and public.billing_today()<o.cycle_end then return; end if;
  if o.mode='expiry' and public.billing_today()<o.previous_end then return; end if;
- base:=case when o.expiry_policy='extend_expiry' and o.mode='exhaustion' then greatest(public.billing_today(),o.previous_end) else public.billing_today() end;
+ base:=case when o.expiry_policy='extend_expiry' and o.mode='exhaustion' then greatest(public.billing_today(),o.previous_end) when o.mode='expiry' then o.previous_end else public.billing_today() end;
  end_date:=case when (o.target_plan->>'months')::integer=1 then base+30 else (base+interval '6 months')::date end;
  n.subscription_type:=o.target_plan->>'subscription_type';
  update public.nutris set subscription_type=n.subscription_type,subscription_status='active',
-  subscription_start=public.billing_today(),subscription_end=end_date,subscription_next_billing_date=end_date,
-  reports_this_month=0,reports_month_reset=public.billing_today(),
+  subscription_start=case when o.mode='expiry' then o.previous_end else public.billing_today() end,
+  subscription_end=end_date,subscription_next_billing_date=end_date,
+  reports_this_month=0,reports_month_reset=case when o.mode='expiry' then o.previous_end else public.billing_today() end,
   max_reports_month=(o.target_plan->>'max_reports_month')::integer,
   max_patients=(o.target_plan->>'max_patients')::integer,
   billing_current_plan=o.target_plan,billing_paid_price=o.amount where id=p_nutri_id;
@@ -206,10 +209,24 @@ begin
 end; $$;
 
 create function public.billing_sync_confirmed(p_order_id uuid) returns void
-language sql security invoker set search_path='' as $$
- update public.billing_orders set provider_synced=true,
- status=case when status='syncing' then 'applied' else status end where id=p_order_id and status in ('syncing','scheduled');
-$$;
+language plpgsql security invoker set search_path='' as $$
+declare o public.billing_orders%rowtype;
+begin
+ select * into o from public.billing_orders where id=p_order_id;
+ if not found then raise exception 'Unknown order'; end if;
+ perform 1 from public.nutris where id=o.nutri_id for update;
+ select * into o from public.billing_orders where id=p_order_id for update;
+ if o.status not in ('syncing','scheduled') then return; end if;
+ if o.renewal_preapproval_id is null then raise exception 'Replacement authorization missing'; end if;
+ if o.status='syncing' then
+  if o.payment_id is null then raise exception 'Verified payment missing'; end if;
+  update public.nutris set mp_preapproval_id=o.renewal_preapproval_id,
+   subscription_cancelled_at=null where id=o.nutri_id and mp_preapproval_id=o.preapproval_id;
+  if not found then raise exception 'Current subscription changed'; end if;
+ end if;
+ update public.billing_orders set provider_synced=true,provider_paused=true,
+  status=case when status='syncing' then 'applied' else status end where id=p_order_id;
+end; $$;
 
 create or replace function public.increment_report_count(p_nutri_id uuid) returns void
 language plpgsql security invoker set search_path='' as $$

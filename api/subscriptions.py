@@ -223,6 +223,13 @@ async def handle_subscription_preapproval(sdk: mercadopago.SDK, preapproval_id: 
     from db import DB
     db = DB()
 
+    from api.billing import handle_replacement_preapproval, managed_preapproval
+    replacement = await handle_replacement_preapproval(db, preapproval)
+    if replacement is not None:
+        return replacement
+    if managed_preapproval(db, preapproval_id):
+        return {"ok": True, "detail": "managed_billing_waits_for_payment"}
+
     res = (db.client.table("nutris")
            .select("id, mp_preapproval_id, subscription_status, subscription_end, subscription_cancelled_at")
            .eq("id", external_reference)
@@ -234,10 +241,6 @@ async def handle_subscription_preapproval(sdk: mercadopago.SDK, preapproval_id: 
 
     nutri = res.data[0]
     nutri_id = nutri["id"]
-
-    from api.billing import managed_preapproval
-    if status == "authorized" and managed_preapproval(db, preapproval_id):
-        return {"ok": True, "detail": "managed_billing_waits_for_payment"}
 
     if status == "authorized":
         # Idempotencia: si ya está activo con este preapproval, ignorar
@@ -406,6 +409,11 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
             authorized_payment_id, preapproval_id,
         )
 
+    from api.billing import handle_managed_invoice
+    managed_result = await handle_managed_invoice(db, invoice, preapproval)
+    if managed_result is not None:
+        return managed_result
+
     res = (db.client.table("nutris")
            .select(
                "id, subscription_status, subscription_start, subscription_end, "
@@ -426,11 +434,6 @@ async def handle_authorized_payment(sdk: mercadopago.SDK, authorized_payment_id:
         )
         logger.error("authorized_payment: nutri not found for preapproval_id=%s", preapproval_id)
         return {"ok": True, "detail": "nutri_not_found"}
-
-    from api.billing import handle_managed_invoice
-    managed_result = await handle_managed_invoice(db, invoice, preapproval)
-    if managed_result is not None:
-        return managed_result
 
     nutri = res.data[0]
     nutri_id = nutri["id"]

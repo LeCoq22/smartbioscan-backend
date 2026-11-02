@@ -2,20 +2,20 @@
 
 Implementación recuperada el 01/11/2026 de los worktrees del 15/10/2026, en la rama `codex/billing-plan-management` de ambos repositorios. No se aplicó esta migración a producción ni se habilitaron compras. No se realizaron cargos ni cambios de contratos reales durante esta recuperación.
 
-**Actualización 02/11/2026:** la prueba real de sandbox confirmó que Mercado Pago
-ignora la nueva frecuencia y fecha al actualizar un contrato existente, aunque
-acepta el importe. El flujo actual de cambios de abono **no debe habilitarse**.
-Crear un contrato nuevo sí conserva la programación, pero requiere autorización
-del comprador. Ver [evidencia y validaciones pendientes](mp-subscription-sandbox-20261102.md).
+**Actualización 02/11/2026:** la prueba de sandbox confirmó que Mercado Pago
+ignora la nueva frecuencia y fecha al actualizar un contrato existente. Se
+reemplazó ese mecanismo por una nueva suscripción pendiente, autorizada por el
+comprador en el checkout oficial. La autorización completa conservó importe,
+frecuencia y fecha. Ver [evidencia](mp-subscription-sandbox-20261102.md).
 
 ## Reglas implementadas
 
-- Básico → Plus: pago único del nuevo plan. Tras confirmación del pago se pausa el débito anterior. Si el cupo base está agotado, activa el cupo completo; si queda cupo base, espera a agotarlo o al fin del ciclo. No exige gastar los créditos comprados ni administrativos: ambos se conservan. Al activar, actualiza importe, frecuencia y siguiente cobro en Mercado Pago; comprueba el resultado con GET. Un fallo conserva el trabajo pendiente para reintentar.
-- Plus → Básico: programa la nueva tarifa para el vencimiento de la suscripción pagada; conserva el plan actual hasta esa fecha. La activación exige un cobro aprobado del nuevo período, no sólo autorización de la suscripción. El semestral conserva su vencimiento de seis meses.
+- Básico → Plus: pago único del nuevo plan. Tras confirmación del pago se pausa el débito anterior. Si el cupo base está agotado, activa el cupo completo; si queda cupo base, espera a agotarlo o al fin del ciclo. No exige gastar los créditos comprados ni administrativos: ambos se conservan. Al activar, prepara una nueva autorización de débito con inicio en el nuevo vencimiento. El panel pide autorizarla; el contrato anterior sigue pausado. Solo después de comprobar por GET estado autorizado, importe, moneda, frecuencia y fecha se cancela el anterior y se sustituye su identificador. Un fallo conserva el trabajo pendiente para reintentar sin cobrar nuevamente el upgrade.
+- Plus → Básico: programa la nueva tarifa para el vencimiento de la suscripción pagada; conserva el plan actual hasta esa fecha. La clienta autoriza un contrato nuevo con inicio al vencimiento; entonces se pausa el anterior. La activación exige un cobro aprobado del nuevo período, no sólo autorización de la suscripción. Tras ese cobro se cancela el contrato anterior. El semestral conserva su vencimiento de seis meses.
 - Cambio de periodicidad sin subir de categoría: se programa al vencimiento, sin cobro inmediato.
 - Paquetes de 10: pago único, se acreditan una vez y no vencen. Conservan su saldo al renovar y al cambiar de abono; requieren una suscripción activa para utilizarlos y no extienden su vencimiento. Se consumen después del cupo base y antes de los créditos administrativos que no caducan. Se pueden comprar durante una espera de cambio de plan, salvo mientras se sincroniza la activación.
 - Precio de paquetes: importe efectivamente pagado / (meses × reportes del cupo mensual) × cantidad. Se redondea el total a dos decimales. No se usa el precio de catálogo para sustituir un comprobante desconocido. En contratos anteriores se consulta el comprobante aprobado en MP; en los nuevos se conserva el precio aplicado.
-- Cancelación de un cambio aún no pagado o una bajada programada: restaura la configuración anterior del proveedor antes de cerrar la operación. Los cambios ya pagados no se cancelan automáticamente desde esta pantalla.
+- Cancelación de un cambio aún no pagado o una bajada programada: cancela el contrato nuevo y restaura el estado anterior antes de cerrar la operación. Se comprueba que la fecha e importe anteriores no cambiaron. Los cambios ya pagados no se cancelan automáticamente desde esta pantalla.
 
 ## Regla comercial confirmada el 01/11/2026
 
@@ -34,7 +34,7 @@ Backend:
 - `migrations/20261015130425_dashboard_billing.sql`: órdenes, recibos, paquetes, renovaciones, bloqueo de sincronización, RLS y funciones transaccionales. Archivo creado con `supabase migration new` y movido al directorio de migraciones que usa este repositorio.
 - `db.py`: al habilitar el esquema, inserción del reporte y descuento de cuota en una transacción, idempotente por ID del reporte.
 - `api/payments.py` y `api/subscriptions.py`: encaminan pagos verificados al nuevo flujo; eventos de autorización no resetean el cupo de una suscripción gestionada. Se evita el checkout antiguo para cambiar una suscripción activa. El router ahora es local a cada registro: evita compartir dependencias de autenticación entre aplicaciones/tests.
-- `scripts/reconcile_billing.py`: proceso a ejecutar cada minuto por el entorno de despliegue; recupera notificaciones de compras perdidas de los últimos siete días, reintenta cambios persistidos y concilia renovaciones automáticas sin que el usuario esté conectado. No crea checkouts ni inicia cargos adicionales.
+- `scripts/reconcile_billing.py`: proceso ejecutable por separado o cada minuto dentro del servicio con `BILLING_RECONCILIATION_ENABLED=true`; recupera notificaciones de compras perdidas de los últimos siete días, reintenta cambios persistidos y concilia renovaciones automáticas sin que el usuario esté conectado. Puede preparar autorizaciones pendientes, pero nunca autoriza al comprador ni inicia cargos. También busca facturas de reemplazos aún no asociados como contrato actual. El bucle trabaja fuera del procesamiento de solicitudes y registra/reintenta errores.
 
 Frontend recuperado en la rama `codex/billing-plan-management`:
 
@@ -56,22 +56,24 @@ Un fallo de sincronización debe alertar al operador (el worker devuelve código
 
 Los avisos `payment` de débitos recurrentes se resuelven por ID de pago a la factura de suscripción; no necesitan el `metadata.plan_id` del checkout antiguo. Una factura todavía no disponible o un error temporal del proveedor devuelve error para permitir reintentos. La migración añade una operación atómica de renovación y auditoría; un aviso atrasado no puede sobrescribir un recibo ya procesado ni una conciliación manual.
 
-## Verificación realizada el 01/11/2026
+## Verificación realizada el 02/11/2026
 
-- 59 pruebas Python dirigidas de billing, suscripciones y administración pasan.
+- 67 pruebas Python dirigidas de billing, suscripciones y administración pasan.
 - Escenarios SQL sobre PostgreSQL embebido PGlite: cupos, duplicados, precio incorrecto, saldo sin vencimiento, pago confirmado después del cierre del checkout, mejora inmediata/diferida, bajada, devolución de paquetes, cancelación, renovación idempotente, bloqueo de worker, propiedad/RLS y creación atómica de reportes.
-- 4 pruebas de navegador del panel pasan; compilación TypeScript/Vite correcta.
+- 6 pruebas de navegador del panel pasan; compilación TypeScript/Vite correcta.
 - La revisión visual del 15/10 fue de la versión anterior; no se reutiliza como validación de esta recuperación.
 - Suite `tests/` antes de incorporar la regla confirmada: 126 pasan y 1 falla en el refresco MyTanita. Se reprodujo el mismo fallo en el commit base sin estos cambios.
 - La suite global desde la raíz incluye scripts de integración que requieren dependencias y credenciales adicionales; no se afirma que esos scripts hayan pasado.
 
-## Antes de habilitar
+## Despliegue
 
-1. Regla comercial confirmada: `BILLING_EXPIRY_POLICY=extend_expiry`. Verificarla en el entorno de despliegue.
-2. Aplicar la migración primero en staging. Se probaron funciones y RLS en PostgreSQL embebido, no se ejecutaron asesores sobre una instancia Supabase remota.
-3. Configurar firma del webhook, URLs, `BILLING_SCHEMA_READY=true` y la política de vencimiento. Mantener `BILLING_MANAGEMENT_ENABLED=false` hasta completar la prueba de proveedor.
-4. Probar con cuentas de prueba de Mercado Pago: checkout, pausa/reactivación, modificación de frecuencia a 30 días/6 meses y **aceptación de `next_payment_date` en la actualización**. La referencia ampliada de MP, revisada el 01/11, solo lista importe/moneda en `auto_recurring` de la actualización y no expone frecuencia ni `next_payment_date` como parámetros editables. La fecha aparece en las respuestas; su actualización en este flujo todavía no fue verificada contra MP real. El código exige comprobarla con GET y no marca la sincronización como completa si no coincide. Si la API no permite la reprogramación exacta, debe adaptarse el mecanismo antes de habilitar compras.
-5. Instalar el worker cada minuto, con exclusión/reintentos ya soportados y alerta ante fallo. Verificar llegada tardía, repetición y desorden de webhooks, y conciliación de cobros del calendario anterior.
-6. Probar migración y despliegue coordinado con una cuenta de staging; recién entonces habilitar la función. La consola de Railway confirmó que la firma del webhook y las URLs existen, pero no están configurados los indicadores BILLING ni MP_TEST_ACCESS_TOKEN. No se imprimieron claves. Aún no se desplegó esta rama.
+1. Regla comercial: `BILLING_EXPIRY_POLICY=extend_expiry`.
+2. Migración probada en PGlite y contra el esquema remoto dentro de una transacción revertida. No hay una rama remota de staging disponible. La prueba remota confirmó que sólo `service_role` puede acreditar pagos; `anon` y `authenticated` no pueden hacerlo.
+3. Aplicar migración y verificar asesores/permisos; desplegar backend y frontend coordinadamente. Habilitar `BILLING_SCHEMA_READY=true` antes de procesar órdenes.
+4. `BILLING_RECONCILIATION_ENABLED=true` activa la conciliación cada minuto en la API. El servicio debe permanecer activo (Serverless desactivado). Los errores aparecen en logs y se reintentan.
+5. Sólo después de comprobar los servicios, habilitar `BILLING_MANAGEMENT_ENABLED=true`. Para detener nuevas compras basta desactivar esta última; mantener esquema y conciliación mientras existan operaciones.
+6. Verificar panel autenticado, importe y plan vigente. No se modifica María Ignacia Matteo sin su pago aprobado.
+
+Estado al preparar esta revisión: migración todavía no aplicada y ramas aún no desplegadas. Registrar la publicación y comprobación final al completarlas.
 
 Fuentes del proveedor consultadas: [gestión de suscripciones](https://www.mercadopago.com.ar/developers/es/docs/subscriptions/subscription-management), [actualización de preapproval](https://www.mercadopago.com.ar/developers/es/reference/online-payments/subscriptions/update-preapproval/put), [preferencias de Checkout Pro](https://www.mercadopago.com.ar/developers/en/reference/online-payments/checkout-pro-preferences/create-preference/post).

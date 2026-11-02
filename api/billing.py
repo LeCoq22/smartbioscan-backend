@@ -101,49 +101,119 @@ async def verified_price(n):
     return str(payment['transaction_amount'])
 
 
+def provider_day(value):
+    """MP timestamps can use -04:00 even when the contract is in Argentina."""
+    if not value:
+        return None
+    parsed=datetime.fromisoformat(str(value).replace('Z','+00:00'))
+    if parsed.tzinfo is None:
+        raise HTTPException(502,'Mercado Pago devolvió una fecha sin zona horaria')
+    return parsed.astimezone(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
+
+
+def renewal_matches(remote, target, due):
+    recurring=remote.get('auto_recurring') or {}
+    return (provider_day(remote.get('next_payment_date'))==due
+        and Decimal(str(recurring.get('transaction_amount',0)))==Decimal(str(target['unit_price']))
+        and recurring.get('currency_id')=='ARS'
+        and recurring.get('frequency')==(30 if target['months']==1 else 6)
+        and recurring.get('frequency_type')==('days' if target['months']==1 else 'months'))
+
+
+async def set_provider_status(provider, status):
+    remote=await mp('GET',f'/preapproval/{provider}')
+    if remote.get('status')!=status:
+        await mp('PUT',f'/preapproval/{provider}',{'status':status})
+        remote=await mp('GET',f'/preapproval/{provider}')
+    if remote.get('status')!=status:
+        raise HTTPException(502,'Mercado Pago todavía no confirmó el estado de la suscripción')
+    return remote
+
+
+async def renewal_contract(db, order, due):
+    """A new hosted authorization, never an unsupported schedule update.
+
+    Creating a pending contract cannot charge or authorize the buyer. A lost
+    creation response may leave an unused pending contract, but its checkout is
+    never returned unless its ID has been persisted successfully.
+    """
+    renewal_id=order.get('renewal_preapproval_id')
+    if renewal_id:
+        remote=await mp('GET',f'/preapproval/{renewal_id}')
+    else:
+        today=datetime.now(ZoneInfo('America/Argentina/Buenos_Aires')).date().isoformat()
+        if due<=today:
+            raise HTTPException(409,'Venció el plazo para autorizar este cambio; requiere conciliación')
+        n=db.get_nutri(order['nutri_id'])
+        target=order['target_plan']
+        remote=await mp('POST','/preapproval',{
+            'reason':target['title'], 'external_reference':'billing-sub:'+order['id'],
+            'payer_email':n['email'], 'status':'pending',
+            'back_url':os.environ['FRONTEND_URL'].rstrip('/')+'/?billing=return',
+            'auto_recurring':{'transaction_amount':float(target['unit_price']),
+                'currency_id':'ARS','frequency':30 if target['months']==1 else 6,
+                'frequency_type':'days' if target['months']==1 else 'months',
+                'start_date':due+'T12:00:00.000-03:00'}})
+        if remote.get('external_reference')!='billing-sub:'+order['id']:
+            raise HTTPException(502,'La autorización no corresponde a este cambio')
+        renewal_id=remote['id']
+        values={'renewal_preapproval_id':renewal_id,'renewal_init_point':remote['init_point'],
+                'renewal_due':due}
+        db.client.table('billing_orders').update(values).eq('id',order['id']).execute()
+        order.update(values)
+    if remote.get('external_reference')!='billing-sub:'+order['id']:
+        raise HTTPException(502,'La autorización no corresponde a este cambio')
+    return remote
+
+
 async def sync_order(db,order):
-    """Durable retry: a failed provider call does not mark the order synchronized."""
-    if order['kind']=='pack' or order['status'] in ('checkout','review','cancelled') or (order['status']=='scheduled' and order['provider_synced']):
+    """Pause the old debit, verify a buyer-authorized replacement, then switch."""
+    if order['kind']=='pack' or order['status'] in ('checkout','review','cancelled') or (order['status']=='scheduled' and order.get('provider_synced')):
         return
     provider=order['preapproval_id']
+    if order['status']=='cancelling':
+        if order.get('renewal_preapproval_id'):
+            await set_provider_status(order['renewal_preapproval_id'],'cancelled')
+        before=order['provider_before']
+        check=await set_provider_status(provider,before['status'])
+        if (provider_day(check.get('next_payment_date'))!=provider_day(before['next_payment_date'])
+            or Decimal(str((check.get('auto_recurring') or {}).get('transaction_amount',0)))!=Decimal(str(before['auto_recurring']['transaction_amount']))):
+            raise HTTPException(502,'La restauración del plan anterior requiere conciliación')
+        db.client.table('billing_orders').update({'status':'cancelled'}).eq('id',order['id']).eq('status','cancelling').execute()
+        return
     if order['mode']=='exhaustion' and order['status']=='paid':
-        await mp('PUT',f'/preapproval/{provider}',{'status':'paused'})
-        check=await mp('GET',f'/preapproval/{provider}')
-        if check.get('status')!='paused':
-            raise HTTPException(502,'La pausa del cobro anterior sigue pendiente')
+        await set_provider_status(provider,'paused')
         rpc(db,'billing_pause_confirmed',order_id=order['id'])
         rpc(db,'billing_tick',nutri_id=order['nutri_id'])
         order=db.client.table('billing_orders').select('*').eq('id',order['id']).single().execute().data
         if order['status']=='paid':
             return
-    if order['status']=='cancelling':
-        before=order['provider_before']
-        await mp('PUT',f'/preapproval/{provider}',before)
-        check=await mp('GET',f'/preapproval/{provider}')
-        if (str(check.get('next_payment_date',''))[:10]!=str(before['next_payment_date'])[:10]
-            or Decimal(str((check.get('auto_recurring') or {}).get('transaction_amount',0)))!=Decimal(str(before['auto_recurring']['transaction_amount']))
-            or check.get('status')!=before['status']):
-            raise HTTPException(502,'La restauración del plan anterior sigue pendiente')
-        db.client.table('billing_orders').update({'status':'cancelled'}).eq('id',order['id']).eq('status','cancelling').execute()
-        return
     if order['status'] not in ('scheduled','syncing'):
         return
-    target=order['target_plan']
-    due=order.get('new_end') if order['status']=='syncing' else order['previous_end']
-    payload={'reason':target['title'],'status':'authorized',
-             'auto_recurring':{'transaction_amount':float(target['unit_price']),
-                               'currency_id':'ARS','frequency':30 if target['months']==1 else 6,
-                               'frequency_type':'days' if target['months']==1 else 'months'},
-             'next_payment_date':due+'T00:00:00.000-03:00'}
-    await mp('PUT',f'/preapproval/{provider}',payload)
-    check=await mp('GET',f'/preapproval/{provider}')
-    recurring=check.get('auto_recurring') or {}
-    if (str(check.get('next_payment_date',''))[:10]!=due or
-        Decimal(str(recurring.get('transaction_amount',0)))!=Decimal(str(target['unit_price'])) or
-        recurring.get('frequency')!=payload['auto_recurring']['frequency'] or
-        recurring.get('frequency_type')!=payload['auto_recurring']['frequency_type'] or
-        check.get('status')!='authorized'):
-        raise HTTPException(502,'Mercado Pago aún no confirmó fecha, importe y frecuencia de renovación')
+    if order['status']=='scheduled' and order.get('provider_synced'):
+        return  # The next invoice advances the provider date; recover it separately.
+    due=order['new_end'] if order['status']=='syncing' else order['previous_end']
+    remote=await renewal_contract(db,order,due)
+    if remote.get('status')=='pending':
+        if not renewal_matches(remote,order['target_plan'],due):
+            raise HTTPException(409,'La fecha del nuevo débito requiere revisión antes de autorizarlo')
+        return
+    if remote.get('status')!='authorized':
+        raise HTTPException(409,'La nueva autorización no está activa; contactá a soporte')
+    if not renewal_matches(remote,order['target_plan'],due):
+        # Do not leave an authorized replacement able to debit earlier than paid access.
+        await set_provider_status(order['renewal_preapproval_id'],'paused')
+        raise HTTPException(409,'Se pausó el nuevo débito porque su fecha o importe requiere revisión')
+    if order['status']=='scheduled':
+        if not order.get('provider_synced'):
+            n=db.get_nutri(order['nutri_id'])
+            if str(n.get('subscription_end'))[:10]!=order['previous_end']:
+                await set_provider_status(order['renewal_preapproval_id'],'paused')
+                raise HTTPException(409,'El plan anterior se renovó durante el cambio; requiere conciliación')
+            await set_provider_status(provider,'paused')
+            rpc(db,'billing_sync_confirmed',order_id=order['id'])
+        return
+    await set_provider_status(provider,'cancelled')
     rpc(db,'billing_sync_confirmed',order_id=order['id'])
 
 
@@ -244,7 +314,8 @@ def register_routes(app,get_current_nutri):
                 'expiry_policy':os.getenv('BILLING_EXPIRY_POLICY','extend_expiry')})
         if order['status']=='scheduled':
             await reconcile_account(db,nutri_id)
-            return {'order_id':order['id'],'status':'scheduled'}
+            order=db.client.table('billing_orders').select('*').eq('id',order['id']).single().execute().data
+            return {'order_id':order['id'],'status':'scheduled','init_point':order.get('renewal_init_point')}
         if order['status']!='checkout':
             return {'order_id':order['id'],'status':order['status']}
         if order.get('init_point'):
@@ -271,6 +342,24 @@ def register_routes(app,get_current_nutri):
         result=rpc(db,'billing_cancel_order',order_id=str(order_id),nutri_id=nutri_id)
         await reconcile_account(db,nutri_id)
         return result
+
+    @router.post('/orders/{order_id}/renewal')
+    async def authorize_renewal(order_id:UUID,nutri_id:str=Depends(get_current_nutri)):
+        require_enabled()
+        from db import DB
+        db=DB()
+        rows=db.client.table('billing_orders').select('*').eq('id',str(order_id)).eq('nutri_id',nutri_id).execute().data
+        if not rows:
+            raise HTTPException(404,'Cambio no encontrado')
+        if rows[0]['status'] not in ('scheduled','syncing'):
+            raise HTTPException(409,'Este cambio no necesita una autorización pendiente')
+        await reconcile_account(db,nutri_id)
+        order=db.client.table('billing_orders').select('*').eq('id',str(order_id)).single().execute().data
+        if order['provider_synced']:
+            return {'status':order['status']}
+        if not order.get('renewal_init_point'):
+            raise HTTPException(503,'La autorización todavía se está preparando')
+        return {'status':order['status'],'init_point':order['renewal_init_point']}
 
     app.include_router(router)
 
@@ -299,37 +388,68 @@ def schema_ready():
     return os.getenv('BILLING_SCHEMA_READY',str(enabled())).lower()=='true'
 
 
+async def handle_replacement_preapproval(db, remote):
+    reference=str(remote.get('external_reference') or '')
+    if not reference.startswith('billing-sub:'):
+        return None
+    if not schema_ready():
+        raise HTTPException(503,'El esquema de cobros todavía no está disponible')
+    try: order_id=str(UUID(reference.removeprefix('billing-sub:')))
+    except ValueError: raise HTTPException(400,'Referencia de autorización inválida')
+    rows=db.client.table('billing_orders').select('*').eq('id',order_id).execute().data
+    if not rows or rows[0].get('renewal_preapproval_id')!=remote.get('id'):
+        raise HTTPException(503,'La autorización todavía no está asociada; reintentar')
+    await reconcile_account(db,rows[0]['nutri_id'])
+    return {'ok':True,'detail':'replacement_authorization_checked'}
+
+
 def managed_preapproval(db,preapproval_id):
     if not schema_ready():
         return False
-    rows=db.client.table('billing_orders').select('id').eq('preapproval_id',preapproval_id).eq('kind','change').neq('status','checkout').neq('status','cancelled').limit(1).execute().data
-    return bool(rows)
+    for field in ('preapproval_id','renewal_preapproval_id'):
+        rows=db.client.table('billing_orders').select('id').eq(field,preapproval_id).eq('kind','change').neq('status','checkout').neq('status','cancelled').limit(1).execute().data
+        if rows: return True
+    return False
 
 
 async def handle_managed_invoice(db,invoice,preapproval):
     provider=invoice['preapproval_id']
     if not managed_preapproval(db,provider):
         return None
+    replacement=db.client.table('billing_orders').select('*').eq('renewal_preapproval_id',provider).execute().data
+    old_orders=db.client.table('billing_orders').select('*').eq('preapproval_id',provider).in_(
+        'status',['paid','scheduled','syncing','cancelling','applied','review']).order('created_at',desc=True).limit(1).execute().data
+    if not replacement:
+        # While the buyer has not authorized the replacement, the old plan may
+        # renew normally. After a pause/switch, an old invoice needs manual review.
+        if old_orders and old_orders[0]['status']=='scheduled' and not old_orders[0]['provider_synced']:
+            return None
+        raise HTTPException(409,'Cobro del contrato anterior durante un cambio: requiere conciliación')
+    order=replacement[0]
+    if old_orders and (old_orders[0]['status'] in ('paid','syncing','cancelling') or
+                       (old_orders[0]['status']=='scheduled' and old_orders[0]['provider_synced'])):
+        raise HTTPException(409,'Cobro durante otro cambio de abono: requiere conciliación')
     payment_id=(invoice.get('payment') or {}).get('id')
     if not payment_id:
         raise HTTPException(502,'Factura sin comprobante de pago')
     payment=await mp('GET',f'/v1/payments/{payment_id}')
     if payment.get('status')!='approved':
         return {'ok':True,'detail':'payment_not_approved'}
-    rows=db.client.table('nutris').select('*').eq('mp_preapproval_id',provider).execute().data
-    if not rows:
-        raise HTTPException(409,'Suscripción no encontrada')
-    n=rows[0]
-    order=pending(db,n['id'])
-    if order:
-        if order['mode']!='expiry' or order['status']!='scheduled':
-            # A charge from the old schedule must never renew the new plan.
-            raise HTTPException(409,'Cobro durante cambio de plan: requiere conciliación')
+    if payment.get('transaction_amount_refunded',0):
+        raise HTTPException(409,'El pago de renovación tiene una devolución; requiere conciliación')
+    if order['status']=='scheduled' and order['mode']=='expiry':
+        if not order.get('provider_synced'):
+            raise HTTPException(503,'La sustitución del débito anterior todavía no fue confirmada')
         result=rpc(db,'billing_accept_payment',order_id=order['id'],payment_id=str(payment['id']),
             amount=str(payment['transaction_amount']),currency=payment.get('currency_id',''),
             status=payment['status'],paid_at=payment.get('date_approved'))
-        await reconcile_account(db,n['id'])
+        await reconcile_account(db,order['nutri_id'])
         return result
+    if order['status']!='applied':
+        raise HTTPException(409,'Cobro antes de completar el cambio: requiere conciliación')
+    n=db.get_nutri(order['nutri_id'])
+    if n.get('mp_preapproval_id')!=provider:
+        raise HTTPException(409,'El cobro pertenece a un contrato reemplazado')
     return rpc(db,'billing_renew',nutri_id=n['id'],payment_id=str(payment['id']),
         amount=str(payment['transaction_amount']),currency=payment.get('currency_id',''),
-        paid_at=payment.get('date_approved'),next_date=str(preapproval.get('next_payment_date',''))[:10] or None)
+        paid_at=payment.get('date_approved'),next_date=provider_day(preapproval.get('next_payment_date')))

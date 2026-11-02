@@ -1,9 +1,9 @@
 # Resultado de Mercado Pago: 02/11/2026 (Europe/Madrid)
 
-**Bloquea el despliegue de cambios de abono.** La actualización del contrato
-existente utilizada por `sync_order` no conserva el calendario solicitado.
-Mantener `BILLING_MANAGEMENT_ENABLED=false`; no se aplicó la migración ni se
-modificaron suscripciones de clientas durante esta prueba.
+La actualización de contratos existentes no conserva el calendario solicitado.
+Se sustituyó por creación de un nuevo contrato y autorización del comprador.
+La autorización completa en checkout oficial pasó las comprobaciones descritas
+abajo. No se modificaron suscripciones de clientas durante estas pruebas.
 
 Se verificó por `/users/me` que la credencial correspondía al vendedor ficticio
 3808774368 y tenía la etiqueta `test_user`. Se utilizaron compradores ficticios
@@ -45,30 +45,42 @@ Intentar autorizarlo desde la credencial del vendedor devolvió HTTP 400:
 `You cannot authorize a preapproval, only the payer can`.
 Esa suscripción `0739692195b14b94b0f92748ae5a5963` también quedó cancelada.
 
-## Comprobación pendiente
+## Checkout oficial completado
 
-Se preparó un checkout oficial para un nuevo comprador ficticio. Opera abrió
-el checkout con la sesión real MAKK. No se seleccionó ningún medio de pago ni
-se confirmó una compra. La revisión automática bloqueó abrir el selector de
-cuenta; se solicitó al usuario cambiar manualmente al comprador ficticio.
+El usuario cambió manualmente a la cuenta ficticia y completó los campos de la
+tarjeta de prueba. Se confirmó el checkout para el comprador 3804949794. La
+consulta posterior del vendedor verificó el contrato
+`a583ceb2b2cd4cf48a6ed01a558aa1a3`:
 
-Falta verificar el checkout completo con ese comprador y la conservación de
-la fecha después de su autorización. No debe confundirse la creación del link
-ni el estado `pending` con una autorización o un pago confirmado.
+- Estado `authorized`.
+- ARS 65000 cada 30 días.
+- Próximo débito `2026-12-16T19:07:50.000-04:00`: día 16/12 en Argentina.
+- Coincidencia de importe, frecuencia, fecha y vendedor ficticio.
 
-## Adaptación necesaria
+Después se canceló ese contrato y se verificó `cancelled`. Los cuatro contratos
+de prueba quedaron cancelados. No quedaron débitos de prueba programados.
 
-El cambio deberá distinguir el pago inicial del upgrade de la autorización
-del nuevo débito automático. La nueva suscripción necesita autorización del
-comprador. Los días prepagados y créditos se conservan; el período del upgrade
-solo se acredita con pago aprobado. El reemplazo debe coordinar pausa/cierre
-del contrato anterior, comprobación de la nueva fecha, reintentos, cancelación,
-webhooks desordenados y recuperación de respuestas perdidas sin habilitar dos
-cobros ni conceder cupo por una mera autorización.
+## Adaptación implementada
 
-Esta adaptación todavía no está implementada ni validada de extremo a extremo.
-La cuenta de María Ignacia Matteo sigue sin cambios por este trabajo y su
-upgrade sigue pendiente de pago.
+El upgrade separa pago inicial y autorización de futuras renovaciones. Primero
+se verifica el pago y se pausa el contrato anterior. Al activar el nuevo cupo,
+se prepara una autorización con inicio en el vencimiento extendido. Cuando el
+comprador la autoriza y el GET confirma todas las condiciones, se cancela el
+contrato anterior y se cambia el identificador vigente.
+
+La bajada o cambio de periodicidad pide autorización para el vencimiento. Solo
+entonces se pausa el contrato anterior; el nuevo plan no se acredita hasta un
+cobro aprobado. Cancelar la programación cancela primero el reemplazo y luego
+restaura el contrato anterior. Un calendario incorrecto se pausa para revisión.
+
+Pruebas locales: 67 Python, escenarios SQL de permisos/cuotas/idempotencia y
+6 pruebas de navegador. Compilación frontend correcta. Se comprobó la migración
+contra el esquema remoto en una transacción revertida. Estas pruebas no
+simulan el transcurso de los 45 días hasta un débito futuro real del proveedor;
+la recepción y repetición de facturas se verifican con escenarios controlados.
+
+La cuenta de María Ignacia Matteo no se cambió por este trabajo; su upgrade
+requiere pago aprobado.
 
 Referencias: [crear suscripción](https://www.mercadopago.com.ar/developers/es/reference/online-payments/subscriptions/create-preapproval/post),
 [actualizar suscripción](https://www.mercadopago.com.ar/developers/es/reference/online-payments/subscriptions/update-preapproval/put),

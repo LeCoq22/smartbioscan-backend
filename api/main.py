@@ -15,7 +15,7 @@ import secrets
 import sys
 import time as _time
 from collections import defaultdict
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from threading import Lock
 from typing import Optional
@@ -54,8 +54,21 @@ async def lifespan(app: FastAPI):
         _logger.info("JWKS precargado: %d keys", len((_jwks_data or {}).get("keys", [])))
     except Exception as exc:
         _logger.warning("No se pudo precargar JWKS en startup: %s", exc)
-    yield
-    print("SmartTanita API apagándose...")
+    billing_task = None
+    if os.getenv('BILLING_RECONCILIATION_ENABLED', 'false').lower() == 'true':
+        from api.billing import schema_ready
+        if not schema_ready():
+            raise RuntimeError('Billing reconciliation requires BILLING_SCHEMA_READY=true')
+        from scripts.reconcile_billing import run_forever
+        billing_task = asyncio.create_task(run_forever())
+    try:
+        yield
+    finally:
+        if billing_task:
+            billing_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await billing_task
+        print("SmartTanita API apagándose...")
 
 app = FastAPI(
     title="SmartTanita API",

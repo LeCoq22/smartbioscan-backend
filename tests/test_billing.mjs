@@ -35,8 +35,12 @@ const basic={id:'bioscan_basico_mensual',title:'Básico',months:1,subscription_t
 const plus={...basic,id:'bioscan_plus_mensual',title:'Plus',max_reports_month:100,max_patients:40,unit_price:65000}
 const create=async(extra={})=>scalar('select billing_create_order($1::jsonb) v',[JSON.stringify({
  id:uuid(),nutri_id:owner,kind:'pack',mode:'cycle',reports:10,amount:'9500',paid_price:'28500',
- target_plan:null,current_plan:basic,preapproval_id:'preapproval-1',previous_end:await date(30),
+ target_plan:null,current_plan:basic,preapproval_id:(await row()).mp_preapproval_id,previous_end:await date(30),
  cycle_start:await date(),cycle_end:await date(30),expiry_policy:'activation',...extra})])
+const sync=async(id)=>{
+ await db.query('update billing_orders set renewal_preapproval_id=coalesce(renewal_preapproval_id,$2) where id=$1',[id,'replacement-'+id]);
+ await db.query('select billing_sync_confirmed($1)',[id]);
+};
 const pay=async(o,id=uuid(),amount=o.amount,status='approved')=>scalar('select billing_accept_payment($1,$2,$3,$4,$5,now()) v',[o.id,id,amount,'ARS',status])
 let expired=await create();
 await db.query("update billing_orders set checkout_expires_at=now()-interval '1 minute' where id=$1",[expired.id]);
@@ -63,7 +67,10 @@ await db.query('select billing_tick($1)',[owner]); assert.equal((await row()).ma
 await db.query('select billing_pause_confirmed($1)',[up.id]); await db.query('select billing_tick($1)',[owner])
 assert.equal((await row()).max_reports_month,100); assert.equal((await gate()).remaining,105)
 assert.equal((await row()).subscription_end,await date(30))
-await db.query('select billing_sync_confirmed($1)',[up.id])
+await assert.rejects(db.query('select billing_sync_confirmed($1)',[up.id]), /Replacement authorization missing/)
+assert.equal((await row()).mp_preapproval_id,'preapproval-1')
+await sync(up.id)
+assert.equal((await row()).mp_preapproval_id,'replacement-'+up.id)
 // No repeated credits on old checkout payment after activation.
 await pay(up,(await scalar('select to_jsonb(o) v from billing_orders o where id=$1',[up.id])).payment_id)
 assert.equal((await gate()).remaining,105)
@@ -71,18 +78,20 @@ assert.equal((await gate()).remaining,105)
 let down=await create({kind:'change',mode:'expiry',reports:0,target_plan:basic,requested_plan:basic.id,amount:28500,current_plan:plus})
 await db.query('select billing_tick($1)',[owner]); assert.equal((await row()).max_reports_month,100)
 assert.equal((await create({kind:'change',mode:'expiry',reports:0,target_plan:basic,requested_plan:basic.id})).ok,false) // block conflicting purchases
-await db.query('select billing_sync_confirmed($1)',[down.id])
+const beforeAuthorization=await row()
+await sync(down.id)
+assert.deepEqual(await row(),beforeAuthorization) // Authorizing future debits grants no plan/quota.
 await db.query('update billing_orders set previous_end=current_date where id=$1',[down.id])
 await pay(down); await db.query('select billing_tick($1)',[owner])
 assert.equal((await row()).max_reports_month,30)
-await db.query('select billing_sync_confirmed($1)',[down.id])
+await sync(down.id)
 // Upgrade with remaining credits waits, then activates upon consuming the last credit.
 let waiting=await create({kind:'change',mode:'exhaustion',reports:0,target_plan:plus,requested_plan:plus.id,amount:65000})
 await pay(waiting); await db.query('select billing_pause_confirmed($1)',[waiting.id]); await db.query('select billing_tick($1)',[owner])
 assert.equal((await row()).max_reports_month,30)
 for(let i=0;i<30;i++) await db.query('select increment_report_count($1)',[owner])
 assert.equal((await row()).max_reports_month,100); assert.equal((await gate()).remaining,105)
-await db.query('select billing_sync_confirmed($1)',[waiting.id]);
+await sync(waiting.id);
 // Refund revokes only unspent package credits, never changes the expiry.
 const refundOrder=await create(), refundPayment=uuid();
 await pay(refundOrder,refundPayment); assert.equal((await gate()).pack_remaining,15);
