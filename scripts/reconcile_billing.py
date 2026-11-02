@@ -89,7 +89,7 @@ async def main():
             failed+=1
             logging.exception('Replacement invoice recovery failed for order %s',order['id'])
     renewals = await reconcile(apply=True)
-    print(json.dumps({'billing_errors': failed, 'renewals': renewals}))
+    print(json.dumps({'billing_errors': failed, 'renewals': renewals}), flush=True)
     return int(failed > 0 or bool(renewals['errors']))
 
 
