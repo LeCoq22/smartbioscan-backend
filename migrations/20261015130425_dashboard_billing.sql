@@ -1,4 +1,6 @@
 begin;
+set local lock_timeout='3s';
+set local statement_timeout='30s';
 
 create function public.billing_today() returns date language sql stable set search_path='' as $$
  select (now() at time zone 'America/Argentina/Buenos_Aires')::date;
